@@ -1,7 +1,7 @@
 {
-  "name": "youtube-audio-api",
+  "name": "yt-audio-api",
   "version": "1.0.0",
-  "description": "API to download YouTube audio using yt-dlp",
+  "description": "Download YouTube audio using yt-dlp",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
