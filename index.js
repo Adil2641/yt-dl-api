@@ -154,7 +154,7 @@ app.get("/", (req, res) => {
                     }
                     
                     showResult('Preparing your audio download...', 'success');
-                    window.location.href = `/download-audio?id=${videoId}`;
+                    window.location.href = '/download-audio?id=' + encodeURIComponent(videoId);
                 }
                 
                 function showResult(message, type) {
