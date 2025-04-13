@@ -131,7 +131,7 @@ const HTML_TEMPLATE = `
             
             showResult('Fetching video information...', 'success');
             
-            fetch(`/get-video-info?url=${encodeURIComponent(videoUrl)}`)
+            fetch('/get-video-info?url=' + encodeURIComponent(videoUrl))
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
@@ -144,7 +144,7 @@ const HTML_TEMPLATE = `
                     // Display video info
                     document.getElementById('thumbnail').src = data.thumbnail;
                     document.getElementById('title').textContent = data.title;
-                    document.getElementById('duration').textContent = `Duration: ${data.duration}`;
+                    document.getElementById('duration').textContent = 'Duration: ' + data.duration;
                     document.getElementById('videoInfo').style.display = 'block';
                     
                     showResult('Ready to download', 'success');
@@ -168,7 +168,7 @@ const HTML_TEMPLATE = `
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(`/download-video?id=${videoInfo.id}&title=${encodeURIComponent(videoInfo.title)}&format=${format}`);
+            eventSource = new EventSource('/download-video?id=' + videoInfo.id + '&title=' + encodeURIComponent(videoInfo.title) + '&format=' + format);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
