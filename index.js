@@ -102,10 +102,8 @@ const HTML_TEMPLATE = `
                 <label for="qualitySelect">Quality:</label>
                 <select id="qualitySelect" class="quality-select">
                     <option value="best">Best Quality</option>
-                    <option value="1080">1080p</option>
-                    <option value="720">720p</option>
-                    <option value="480">480p</option>
-                    <option value="360">360p</option>
+                    <option value="22">720p (MP4)</option>
+                    <option value="18">360p (MP4)</option>
                 </select>
             </div>
         </div>
@@ -328,16 +326,14 @@ app.get("/download-progress", (req, res) => {
     if (format === 'mp3') {
         command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     } else {
-        // For MP4 with quality selection
-        let qualityFilter;
+        // For MP4 with YouTube's pre-merged formats
+        let formatCode;
         switch(quality) {
-            case '1080': qualityFilter = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'; break;
-            case '720': qualityFilter = 'bestvideo[height<=720]+bestaudio/best[height<=720]'; break;
-            case '480': qualityFilter = 'bestvideo[height<=480]+bestaudio/best[height<=480]'; break;
-            case '360': qualityFilter = 'bestvideo[height<=360]+bestaudio/best[height<=360]'; break;
-            default: qualityFilter = 'bestvideo+bestaudio/best'; // Best quality
+            case '22': formatCode = '22'; break; // 720p MP4
+            case '18': formatCode = '18'; break; // 360p MP4
+            default: formatCode = 'best'; // Best available pre-merged format
         }
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "${qualityFilter}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --cookies ${cookiePath} -f "${formatCode}" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
