@@ -51,22 +51,17 @@ const MALICIOUS_PATTERNS = [
     /\.dll$/i
 ];
 
-// Optimized malicious link detection
-function isMaliciousLink(url) {
-    return MALICIOUS_PATTERNS.some(pattern => pattern.test(url));
-}
-
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
-// HTML Template with MP3/MP4 selection
+// HTML Template with format selection
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Downloader</title>
+    <title>YouTube Video Downloader</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; text-align: center; }
         .container { background-color: #f9f9f9; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -84,22 +79,32 @@ const HTML_TEMPLATE = `
         .format-selector { margin: 15px 0; }
         .format-selector label { margin: 0 10px; cursor: pointer; }
         .format-selector input { width: auto; margin-right: 5px; }
+        .thumbnail { max-width: 100%; margin-top: 15px; border-radius: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>YouTube Downloader</h1>
-        <p>Enter YouTube Video ID or URL:</p>
-        <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
-        <button onclick="getVideoInfo()">Get Info</button>
-        <div id="title"></div>
+        <h1>YouTube Video Downloader</h1>
+        <p>Enter YouTube Video URL:</p>
+        <input type="text" id="videoUrl" placeholder="e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+        <button onclick="getVideoInfo()">Get Video Info</button>
         
-        <div class="format-selector" id="formatSelector" style="display:none;">
-            <label><input type="radio" name="format" value="mp3" checked> MP3 (Audio)</label>
-            <label><input type="radio" name="format" value="mp4"> MP4 (Video)</label>
+        <div id="videoInfo" style="display:none;">
+            <img id="thumbnail" class="thumbnail" src="" alt="Video thumbnail">
+            <div id="title"></div>
+            <div id="duration"></div>
+            
+            <div class="format-selector">
+                <h3>Select Download Format:</h3>
+                <label><input type="radio" name="format" value="mp4" checked> MP4 (Video - Best Quality)</label>
+                <label><input type="radio" name="format" value="720"> MP4 (720p HD)</label>
+                <label><input type="radio" name="format" value="480"> MP4 (480p)</label>
+                <label><input type="radio" name="format" value="360"> MP4 (360p)</label>
+                <label><input type="radio" name="format" value="mp3"> MP3 (Audio Only)</label>
+            </div>
+            
+            <button id="downloadBtn" onclick="downloadVideo()">Download Video</button>
         </div>
-        
-        <button id="downloadBtn" style="display:none;" onclick="downloadMedia()">Download</button>
         
         <div id="progress" style="display:none;">
             <p>Download Progress:</p>
@@ -113,44 +118,35 @@ const HTML_TEMPLATE = `
     </div>
     
     <script>
-        let videoTitle = '';
-        let videoId = '';
+        let videoInfo = {};
         let eventSource = null;
         
         function getVideoInfo() {
-            const input = document.getElementById('videoId').value.trim();
-            videoId = input;
+            const videoUrl = document.getElementById('videoUrl').value.trim();
             
-            // Extract ID from URL if URL was provided
-            if (input.includes('youtube.com') || input.includes('youtu.be')) {
-                const url = new URL(input.includes('://') ? input : 'https://' + input);
-                if (url.hostname === 'youtu.be') {
-                    videoId = url.pathname.slice(1);
-                } else {
-                    videoId = url.searchParams.get('v');
-                }
-            }
-            
-            if (!videoId) {
-                showResult('Please enter a valid YouTube video ID or URL', 'error');
+            if (!videoUrl || !videoUrl.includes('youtube.com')) {
+                showResult('Please enter a valid YouTube URL', 'error');
                 return;
             }
             
             showResult('Fetching video information...', 'success');
-            document.getElementById('downloadBtn').disabled = true;
             
-            fetch(\`/get-title?id=\${videoId}\`)
+            fetch(`/get-video-info?url=${encodeURIComponent(videoUrl)}`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
                         showResult(data.error, 'error');
                         return;
                     }
-                    videoTitle = data.title;
+                    
+                    videoInfo = data;
+                    
+                    // Display video info
+                    document.getElementById('thumbnail').src = data.thumbnail;
                     document.getElementById('title').textContent = data.title;
-                    document.getElementById('formatSelector').style.display = 'block';
-                    document.getElementById('downloadBtn').style.display = 'inline-block';
-                    document.getElementById('downloadBtn').disabled = false;
+                    document.getElementById('duration').textContent = `Duration: ${data.duration}`;
+                    document.getElementById('videoInfo').style.display = 'block';
+                    
                     showResult('Ready to download', 'success');
                 })
                 .catch(error => {
@@ -159,35 +155,49 @@ const HTML_TEMPLATE = `
                 });
         }
         
-        function downloadMedia() {
-            if (!videoId) {
-                showResult('Please enter a valid YouTube video ID or URL', 'error');
+        function downloadVideo() {
+            if (!videoInfo.id) {
+                showResult('Please get video information first', 'error');
                 return;
             }
             
             const format = document.querySelector('input[name="format"]:checked').value;
             
-            showResult('Preparing download...', 'success');
+            showResult('Starting download...', 'success');
             document.getElementById('downloadBtn').disabled = true;
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
+            eventSource = new EventSource(`/download-video?id=${videoInfo.id}&title=${encodeURIComponent(videoInfo.title)}&format=${format}`);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
+                
                 if (data.progress) {
                     const progress = Math.round(data.progress);
                     document.getElementById('progressBar').style.width = progress + '%';
                     document.getElementById('progressText').textContent = progress + '%';
                 }
+                
                 if (data.url) {
                     // Download complete
                     eventSource.close();
-                    window.location.href = data.url;
+                    showResult('Download complete!', 'success');
                     document.getElementById('progress').style.display = 'none';
                     document.getElementById('downloadBtn').disabled = false;
+                    
+                    // Create download link
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = data.url;
+                    downloadLink.textContent = 'Click here if download does not start automatically';
+                    downloadLink.style.display = 'block';
+                    downloadLink.style.marginTop = '10px';
+                    document.getElementById('result').appendChild(downloadLink);
+                    
+                    // Start download automatically
+                    window.location.href = data.url;
                 }
+                
                 if (data.error) {
                     showResult(data.error, 'error');
                     eventSource.close();
@@ -220,64 +230,73 @@ app.get("/", (req, res) => {
     res.send(HTML_TEMPLATE);
 });
 
-app.get("/get-title", async (req, res) => {
-    const videoId = req.query.id;
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    // Check cache first
-    if (titleCache.has(videoId)) {
-        const cached = titleCache.get(videoId);
-        if (Date.now() - cached.timestamp < TITLE_CACHE_TTL) {
-            return res.json({ title: cached.title });
-        }
-    }
-
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+app.get("/get-video-info", async (req, res) => {
+    const videoUrl = req.query.url;
     
+    if (!videoUrl) {
+        return res.status(400).json({ error: "YouTube URL is required." });
+    }
+
     try {
-        const source = axios.CancelToken.source();
-        const timeout = setTimeout(() => {
-            source.cancel('API request timed out');
-        }, 30000);
+        // Extract video ID from URL
+        let videoId;
+        try {
+            const url = new URL(videoUrl.includes('://') ? videoUrl : 'https://' + videoUrl);
+            if (url.hostname === 'youtu.be') {
+                videoId = url.pathname.slice(1);
+            } else {
+                videoId = url.searchParams.get('v');
+            }
+        } catch (e) {
+            return res.status(400).json({ error: "Invalid YouTube URL" });
+        }
 
-        const apiResponse = await axios.get(`https://audio-recon-api.onrender.com/adil?url=${videoUrl}`, {
-            cancelToken: source.token
-        });
+        if (!videoId) {
+            return res.status(400).json({ error: "Could not extract video ID from URL" });
+        }
+
+        // Get video info using yt-dlp
+        const command = `${ytDlpPath} --dump-json --no-warnings "${videoUrl}"`;
+        const { stdout } = await execPromise(command);
         
-        clearTimeout(timeout);
+        const videoInfo = JSON.parse(stdout);
+        
+        // Format response
+        const response = {
+            id: videoInfo.id,
+            title: videoInfo.title,
+            thumbnail: videoInfo.thumbnail,
+            duration: formatDuration(videoInfo.duration),
+            formats: []
+        };
 
-        if (apiResponse.data?.title) {
-            titleCache.set(videoId, {
-                title: apiResponse.data.title,
-                timestamp: Date.now()
-            });
-            return res.json({ title: apiResponse.data.title });
-        }
-        return res.status(500).json({ error: "Could not retrieve video title" });
+        return res.json(response);
     } catch (error) {
-        if (axios.isCancel(error)) {
-            console.log("API request timed out");
-            return res.status(504).json({ error: "API request timed out" });
-        }
-        console.error("API Error:", error);
-        return res.status(500).json({ error: "Failed to get video title from API" });
+        console.error("Error getting video info:", error);
+        return res.status(500).json({ error: "Failed to get video information" });
     }
 });
 
-// SSE endpoint for progress updates
-app.get("/download-progress", (req, res) => {
+function formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    return [
+        hours > 0 ? hours.toString().padStart(2, '0') : null,
+        minutes.toString().padStart(2, '0'),
+        secs.toString().padStart(2, '0')
+    ].filter(Boolean).join(':');
+}
+
+// SSE endpoint for video download progress
+app.get("/download-video", (req, res) => {
     const videoId = req.query.id;
     let title = req.query.title || videoId;
-    const format = req.query.format || 'mp3';
+    const format = req.query.format || 'mp4';
     
     if (!videoId) {
         return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-        return res.status(400).json({ error: "Invalid YouTube video ID format." });
     }
 
     // Set SSE headers
@@ -285,9 +304,9 @@ app.get("/download-progress", (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    // Clean title
+    // Clean title for filename
     title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format}`);
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format === 'mp3' ? 'mp3' : 'mp4'}`);
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Check if file already exists
@@ -308,10 +327,21 @@ app.get("/download-progress", (req, res) => {
 
     // Build command based on format
     let command;
-    if (format === 'mp3') {
-        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
-    } else {
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    switch(format) {
+        case 'mp3':
+            command = `${ytDlpPath} -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" "${videoUrl}"`;
+            break;
+        case '360':
+            command = `${ytDlpPath} -f "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
+            break;
+        case '480':
+            command = `${ytDlpPath} -f "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
+            break;
+        case '720':
+            command = `${ytDlpPath} -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
+            break;
+        default: // Best quality
+            command = `${ytDlpPath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
@@ -354,7 +384,9 @@ app.get("/download-file", (req, res) => {
         return res.status(404).send("File not found");
     }
 
-    res.download(filePath, path.basename(filePath), (err) => {
+    const filename = path.basename(filePath);
+    
+    res.download(filePath, filename, (err) => {
         if (err) {
             console.error("Download error:", err);
             return res.status(500).send("Download failed");
@@ -374,11 +406,11 @@ app.get("/download-file", (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).send('Something broke!');
+    res.status(500).send('Something went wrong!');
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`YouTube Video Downloader running on port ${PORT}`);
     console.log(`CPU Cores: ${CPU_COUNT}`);
     console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
 });
