@@ -66,13 +66,13 @@ const HTML_TEMPLATE = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Video Downloader</title>
+    <title>YouTube Downloader</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; text-align: center; }
         .container { background-color: #f9f9f9; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         input { padding: 10px; width: 70%; margin-right: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        button { padding: 10px 20px; background-color: #ff0000; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #cc0000; }
+        button { padding: 10px 20px; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { opacity: 0.9; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
         #result { margin-top: 20px; padding: 10px; border-radius: 4px; }
         .success { background-color: #d4edda; color: #155724; }
@@ -81,16 +81,23 @@ const HTML_TEMPLATE = `
         #progress { width: 100%; margin-top: 20px; display: none; }
         .progress-bar { height: 20px; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; }
         .progress { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.3s; }
+        .download-options { margin-top: 15px; display: none; }
+        .mp3-btn { background-color: #ff0000; }
+        .mp4-btn { background-color: #0066cc; margin-left: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>YouTube Video Downloader</h1>
+        <h1>YouTube Downloader</h1>
         <p>Enter YouTube Video ID or URL:</p>
         <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
         <button onclick="getVideoInfo()">Get Info</button>
         <div id="title"></div>
-        <button id="downloadBtn" style="display:none;" onclick="downloadVideo()">Download Video</button>
+        
+        <div class="download-options" id="downloadOptions">
+            <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">Download MP3</button>
+            <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">Download MP4</button>
+        </div>
         
         <div id="progress" style="display:none;">
             <p>Download Progress:</p>
@@ -107,6 +114,7 @@ const HTML_TEMPLATE = `
         let videoTitle = '';
         let videoId = '';
         let eventSource = null;
+        let currentFormat = '';
         
         function getVideoInfo() {
             const input = document.getElementById('videoId').value.trim();
@@ -128,7 +136,7 @@ const HTML_TEMPLATE = `
             }
             
             showResult('Fetching video information...', 'success');
-            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('downloadOptions').style.display = 'none';
             
             fetch(\`/get-title?id=\${videoId}\`)
                 .then(response => response.json())
@@ -139,8 +147,9 @@ const HTML_TEMPLATE = `
                     }
                     videoTitle = data.title;
                     document.getElementById('title').textContent = data.title;
-                    document.getElementById('downloadBtn').style.display = 'inline-block';
-                    document.getElementById('downloadBtn').disabled = false;
+                    document.getElementById('downloadOptions').style.display = 'block';
+                    document.getElementById('downloadMp3Btn').disabled = false;
+                    document.getElementById('downloadMp4Btn').disabled = false;
                     showResult('Ready to download', 'success');
                 })
                 .catch(error => {
@@ -149,18 +158,20 @@ const HTML_TEMPLATE = `
                 });
         }
         
-        function downloadVideo() {
+        function downloadMedia(format) {
             if (!videoId) {
                 showResult('Please enter a valid YouTube video ID or URL', 'error');
                 return;
             }
             
+            currentFormat = format;
             showResult('Preparing download...', 'success');
-            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('downloadMp3Btn').disabled = true;
+            document.getElementById('downloadMp4Btn').disabled = true;
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}\`);
+            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -174,20 +185,23 @@ const HTML_TEMPLATE = `
                     eventSource.close();
                     window.location.href = data.url;
                     document.getElementById('progress').style.display = 'none';
-                    document.getElementById('downloadBtn').disabled = false;
+                    document.getElementById('downloadMp3Btn').disabled = false;
+                    document.getElementById('downloadMp4Btn').disabled = false;
                 }
                 if (data.error) {
                     showResult(data.error, 'error');
                     eventSource.close();
                     document.getElementById('progress').style.display = 'none';
-                    document.getElementById('downloadBtn').disabled = false;
+                    document.getElementById('downloadMp3Btn').disabled = false;
+                    document.getElementById('downloadMp4Btn').disabled = false;
                 }
             };
             
             eventSource.onerror = function() {
                 showResult('Download failed', 'error');
                 document.getElementById('progress').style.display = 'none';
-                document.getElementById('downloadBtn').disabled = false;
+                document.getElementById('downloadMp3Btn').disabled = false;
+                document.getElementById('downloadMp4Btn').disabled = false;
                 eventSource.close();
             };
         }
@@ -258,6 +272,7 @@ app.get("/get-title", async (req, res) => {
 app.get("/download-progress", (req, res) => {
     const videoId = req.query.id;
     let title = req.query.title || videoId;
+    const format = req.query.format || 'mp4';
     
     if (!videoId) {
         return res.status(400).json({ error: "Video ID is required." });
@@ -274,7 +289,7 @@ app.get("/download-progress", (req, res) => {
 
     // Clean title
     title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.mp4`);
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format}`);
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Check if file already exists
@@ -293,10 +308,16 @@ app.get("/download-progress", (req, res) => {
 
     activeDownloads++;
 
-    // Command to download pre-merged video (faster, no post-processing)
-    const command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    // Build yt-dlp command based on format
+    let command;
+    if (format === 'mp3') {
+        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    } else {
+        // For MP4, we download the pre-merged best quality video
+        command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    }
 
-    console.log("Running direct video download command:", command);
+    console.log("Running download command:", command);
     
     const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
 
