@@ -34,23 +34,6 @@ app.use(express.static('public'));
 const titleCache = new Map();
 let activeDownloads = 0;
 
-// Security patterns
-const MALICIOUS_PATTERNS = [
-    /https?:\/\/link\/download\?id=/i,
-    /javascript:/i,
-    /data:/i,
-    /vbscript:/i,
-    /eval\(/i,
-    /document\./i,
-    /window\./i,
-    /\.php\?/i,
-    /\.asp\?/i,
-    /\.exe$/i,
-    /\.bat$/i,
-    /\.cmd$/i,
-    /\.dll$/i
-];
-
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
@@ -80,6 +63,7 @@ const HTML_TEMPLATE = `
         .format-selector label { margin: 0 10px; cursor: pointer; }
         .format-selector input { width: auto; margin-right: 5px; }
         .thumbnail { max-width: 100%; margin-top: 15px; border-radius: 5px; }
+        .video-info { margin-top: 15px; text-align: left; }
     </style>
 </head>
 <body>
@@ -90,20 +74,23 @@ const HTML_TEMPLATE = `
         <button onclick="getVideoInfo()">Get Video Info</button>
         
         <div id="videoInfo" style="display:none;">
-            <img id="thumbnail" class="thumbnail" src="" alt="Video thumbnail">
-            <div id="title"></div>
-            <div id="duration"></div>
+            <div class="video-info">
+                <img id="thumbnail" class="thumbnail" src="" alt="Video thumbnail">
+                <div id="title"></div>
+                <div id="duration"></div>
+                <div id="views"></div>
+            </div>
             
             <div class="format-selector">
                 <h3>Select Download Format:</h3>
-                <label><input type="radio" name="format" value="mp4" checked> MP4 (Video - Best Quality)</label>
+                <label><input type="radio" name="format" value="mp4" checked> MP4 (Best Quality)</label>
                 <label><input type="radio" name="format" value="720"> MP4 (720p HD)</label>
                 <label><input type="radio" name="format" value="480"> MP4 (480p)</label>
                 <label><input type="radio" name="format" value="360"> MP4 (360p)</label>
                 <label><input type="radio" name="format" value="mp3"> MP3 (Audio Only)</label>
             </div>
             
-            <button id="downloadBtn" onclick="downloadVideo()">Download Video</button>
+            <button id="downloadBtn" onclick="downloadVideo()">Download</button>
         </div>
         
         <div id="progress" style="display:none;">
@@ -114,28 +101,39 @@ const HTML_TEMPLATE = `
             <p id="progressText">0%</p>
         </div>
         
-        <div id="result"></div>
+        <div id="status"></div>
     </div>
     
     <script>
         let videoInfo = {};
         let eventSource = null;
         
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+            statusDiv.style.display = 'block';
+        }
+        
+        function clearStatus() {
+            document.getElementById('status').style.display = 'none';
+        }
+        
         function getVideoInfo() {
             const videoUrl = document.getElementById('videoUrl').value.trim();
             
             if (!videoUrl || !videoUrl.includes('youtube.com')) {
-                showResult('Please enter a valid YouTube URL', 'error');
+                showStatus('Please enter a valid YouTube URL', 'error');
                 return;
             }
             
-            showResult('Fetching video information...', 'success');
+            showStatus('Fetching video information...', 'success');
             
             fetch('/get-video-info?url=' + encodeURIComponent(videoUrl))
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
-                        showResult(data.error, 'error');
+                        showStatus(data.error, 'error');
                         return;
                     }
                     
@@ -143,31 +141,31 @@ const HTML_TEMPLATE = `
                     
                     // Display video info
                     document.getElementById('thumbnail').src = data.thumbnail;
-                    document.getElementById('title').textContent = data.title;
+                    document.getElementById('title').textContent = 'Title: ' + data.title;
                     document.getElementById('duration').textContent = 'Duration: ' + data.duration;
-                    document.getElementById('videoInfo').style.display = 'block';
+                    document.getElementById('views').textContent = 'Views: ' + data.views.toLocaleString();
                     
-                    showResult('Ready to download', 'success');
+                    document.getElementById('videoInfo').style.display = 'block';
+                    clearStatus();
                 })
                 .catch(error => {
-                    showResult('Failed to get video information', 'error');
+                    showStatus('Failed to get video information', 'error');
                     console.error(error);
                 });
         }
         
         function downloadVideo() {
             if (!videoInfo.id) {
-                showResult('Please get video information first', 'error');
+                showStatus('Please get video information first', 'error');
                 return;
             }
             
             const format = document.querySelector('input[name="format"]:checked').value;
             
-            showResult('Starting download...', 'success');
+            showStatus('Starting download...', 'success');
             document.getElementById('downloadBtn').disabled = true;
             document.getElementById('progress').style.display = 'block';
             
-            // Setup progress updates via SSE
             eventSource = new EventSource('/download-video?id=' + videoInfo.id + '&title=' + encodeURIComponent(videoInfo.title) + '&format=' + format);
             
             eventSource.onmessage = function(event) {
@@ -180,26 +178,17 @@ const HTML_TEMPLATE = `
                 }
                 
                 if (data.url) {
-                    // Download complete
                     eventSource.close();
-                    showResult('Download complete!', 'success');
+                    showStatus('Download complete!', 'success');
                     document.getElementById('progress').style.display = 'none';
                     document.getElementById('downloadBtn').disabled = false;
-                    
-                    // Create download link
-                    const downloadLink = document.createElement('a');
-                    downloadLink.href = data.url;
-                    downloadLink.textContent = 'Click here if download does not start automatically';
-                    downloadLink.style.display = 'block';
-                    downloadLink.style.marginTop = '10px';
-                    document.getElementById('result').appendChild(downloadLink);
                     
                     // Start download automatically
                     window.location.href = data.url;
                 }
                 
                 if (data.error) {
-                    showResult(data.error, 'error');
+                    showStatus(data.error, 'error');
                     eventSource.close();
                     document.getElementById('progress').style.display = 'none';
                     document.getElementById('downloadBtn').disabled = false;
@@ -207,18 +196,11 @@ const HTML_TEMPLATE = `
             };
             
             eventSource.onerror = function() {
-                showResult('Download failed', 'error');
+                showStatus('Download failed', 'error');
                 document.getElementById('progress').style.display = 'none';
                 document.getElementById('downloadBtn').disabled = false;
                 eventSource.close();
             };
-        }
-        
-        function showResult(message, type) {
-            const resultDiv = document.getElementById('result');
-            resultDiv.textContent = message;
-            resultDiv.className = type;
-            resultDiv.style.display = 'block';
         }
     </script>
 </body>
@@ -267,6 +249,7 @@ app.get("/get-video-info", async (req, res) => {
             title: videoInfo.title,
             thumbnail: videoInfo.thumbnail,
             duration: formatDuration(videoInfo.duration),
+            views: videoInfo.view_count,
             formats: []
         };
 
