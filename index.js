@@ -228,7 +228,7 @@ app.get("/get-title", async (req, res) => {
         const source = axios.CancelToken.source();
         const timeout = setTimeout(() => {
             source.cancel('API request timed out');
-        }, 5000);
+        }, 20000);
 
         const apiResponse = await axios.get(`https://audio-recon-api.onrender.com/adil?url=${videoUrl}`, {
             cancelToken: source.token
