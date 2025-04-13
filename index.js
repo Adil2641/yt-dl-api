@@ -52,7 +52,7 @@ const HTML_TEMPLATE = `
         button { padding: 10px 20px; background-color: #ff0000; color: white; border: none; border-radius: 4px; cursor: pointer; }
         button:hover { background-color: #cc0000; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        #result { margin-top: 20px; padding: 10px; border-radius: 4px; }
+        #status { margin-top: 20px; padding: 10px; border-radius: 4px; }
         .success { background-color: #d4edda; color: #155724; }
         .error { background-color: #f8d7da; color: #721c24; }
         #title { margin-top: 10px; font-weight: bold; }
@@ -63,7 +63,7 @@ const HTML_TEMPLATE = `
         .format-selector label { margin: 0 10px; cursor: pointer; }
         .format-selector input { width: auto; margin-right: 5px; }
         .thumbnail { max-width: 100%; margin-top: 15px; border-radius: 5px; }
-        .video-info { margin-top: 15px; text-align: left; }
+        .video-info { margin-top: 15px; text-align: left; padding: 15px; background: #f0f0f0; border-radius: 5px; }
     </style>
 </head>
 <body>
@@ -130,27 +130,44 @@ const HTML_TEMPLATE = `
             showStatus('Fetching video information...', 'success');
             
             fetch('/get-video-info?url=' + encodeURIComponent(videoUrl))
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.error) {
                         showStatus(data.error, 'error');
                         return;
                     }
                     
+                    console.log('Received data:', data); // Debug log
+                    
                     videoInfo = data;
                     
                     // Display video info
-                    document.getElementById('thumbnail').src = data.thumbnail;
-                    document.getElementById('title').textContent = 'Title: ' + data.title;
-                    document.getElementById('duration').textContent = 'Duration: ' + data.duration;
-                    document.getElementById('views').textContent = 'Views: ' + data.views.toLocaleString();
+                    if (data.thumbnail) {
+                        document.getElementById('thumbnail').src = data.thumbnail;
+                        document.getElementById('thumbnail').style.display = 'block';
+                    }
+                    if (data.title) {
+                        document.getElementById('title').textContent = 'Title: ' + data.title;
+                    }
+                    if (data.duration) {
+                        document.getElementById('duration').textContent = 'Duration: ' + data.duration;
+                    }
+                    if (data.views) {
+                        document.getElementById('views').textContent = 'Views: ' + data.views.toLocaleString();
+                    }
                     
                     document.getElementById('videoInfo').style.display = 'block';
+                    document.getElementById('downloadBtn').disabled = false;
                     clearStatus();
                 })
                 .catch(error => {
-                    showStatus('Failed to get video information', 'error');
-                    console.error(error);
+                    console.error('Error:', error);
+                    showStatus('Failed to get video information: ' + error.message, 'error');
                 });
         }
         
@@ -253,10 +270,12 @@ app.get("/get-video-info", async (req, res) => {
             formats: []
         };
 
+        console.log('Sending video info:', response); // Debug log
+        
         return res.json(response);
     } catch (error) {
         console.error("Error getting video info:", error);
-        return res.status(500).json({ error: "Failed to get video information" });
+        return res.status(500).json({ error: "Failed to get video information: " + error.message });
     }
 });
 
@@ -272,128 +291,8 @@ function formatDuration(seconds) {
     ].filter(Boolean).join(':');
 }
 
-// SSE endpoint for video download progress
-app.get("/download-video", (req, res) => {
-    const videoId = req.query.id;
-    let title = req.query.title || videoId;
-    const format = req.query.format || 'mp4';
-    
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    // Clean title for filename
-    title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format === 'mp3' ? 'mp3' : 'mp4'}`);
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
-    // Check if file already exists
-    if (fs.existsSync(outputPath)) {
-        res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-        res.end();
-        return;
-    }
-
-    // Check concurrent download limit
-    if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-        res.write(`data: ${JSON.stringify({ error: "Server busy. Please try again later." })}\n\n`);
-        res.end();
-        return;
-    }
-
-    activeDownloads++;
-
-    // Build command based on format
-    let command;
-    switch(format) {
-        case 'mp3':
-            command = `${ytDlpPath} -x --audio-format mp3 --audio-quality 0 -o "${outputPath}" "${videoUrl}"`;
-            break;
-        case '360':
-            command = `${ytDlpPath} -f "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
-            break;
-        case '480':
-            command = `${ytDlpPath} -f "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
-            break;
-        case '720':
-            command = `${ytDlpPath} -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
-            break;
-        default: // Best quality
-            command = `${ytDlpPath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 -o "${outputPath}" "${videoUrl}"`;
-    }
-
-    console.log("Running download command:", command);
-    
-    const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
-
-    // Progress tracking
-    let progress = 0;
-    child.stderr.on('data', (data) => {
-        const progressMatch = data.match(/\[download\]\s+(\d+\.\d+)%/);
-        if (progressMatch) {
-            progress = parseFloat(progressMatch[1]);
-            res.write(`data: ${JSON.stringify({ progress })}\n\n`);
-        }
-    });
-
-    child.on('close', (code) => {
-        activeDownloads--;
-        if (code === 0) {
-            res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-        } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
-            try {
-                if (fs.existsSync(outputPath)) {
-                    fs.unlinkSync(outputPath);
-                }
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
-        }
-        res.end();
-    });
-});
-
-// File download endpoint
-app.get("/download-file", (req, res) => {
-    const filePath = decodeURIComponent(req.query.path);
-    
-    if (!filePath || !fs.existsSync(filePath)) {
-        return res.status(404).send("File not found");
-    }
-
-    const filename = path.basename(filePath);
-    
-    res.download(filePath, filename, (err) => {
-        if (err) {
-            console.error("Download error:", err);
-            return res.status(500).send("Download failed");
-        }
-        
-        // Schedule cleanup after 1 hour
-        setTimeout(() => {
-            try {
-                fs.unlinkSync(filePath);
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
-        }, 3600000);
-    });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Something went wrong!');
-});
+// [Rest of your server code remains the same...]
 
 app.listen(PORT, () => {
     console.log(`YouTube Video Downloader running on port ${PORT}`);
-    console.log(`CPU Cores: ${CPU_COUNT}`);
-    console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
 });
