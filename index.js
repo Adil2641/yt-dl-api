@@ -2,6 +2,7 @@ const express = require("express");
 const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -71,6 +72,10 @@ app.get("/", (req, res) => {
                     background-color: #f8d7da;
                     color: #721c24;
                 }
+                #title {
+                    margin-top: 10px;
+                    font-weight: bold;
+                }
             </style>
         </head>
         <body>
@@ -78,14 +83,19 @@ app.get("/", (req, res) => {
                 <h1>YouTube Audio Downloader</h1>
                 <p>Enter YouTube Video ID or URL:</p>
                 <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
-                <button onclick="downloadAudio()">Download MP3</button>
+                <button onclick="getVideoInfo()">Get Info</button>
+                <div id="title"></div>
+                <button id="downloadBtn" style="display:none;" onclick="downloadAudio()">Download MP3</button>
                 <div id="result"></div>
             </div>
             
             <script>
-                function downloadAudio() {
+                let videoTitle = '';
+                let videoId = '';
+                
+                function getVideoInfo() {
                     const input = document.getElementById('videoId').value.trim();
-                    let videoId = input;
+                    videoId = input;
                     
                     // Extract ID from URL if URL was provided
                     if (input.includes('youtube.com') || input.includes('youtu.be')) {
@@ -102,9 +112,34 @@ app.get("/", (req, res) => {
                         return;
                     }
                     
-                    showResult('Downloading... please wait', 'success');
+                    showResult('Fetching video information...', 'success');
                     
-                    window.location.href = \`/download?id=\${videoId}\`;
+                    fetch(\`/get-title?id=\${videoId}\`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.error) {
+                                showResult(data.error, 'error');
+                                return;
+                            }
+                            videoTitle = data.title;
+                            document.getElementById('title').textContent = data.title;
+                            document.getElementById('downloadBtn').style.display = 'inline-block';
+                            showResult('Ready to download', 'success');
+                        })
+                        .catch(error => {
+                            showResult('Failed to get video information', 'error');
+                            console.error(error);
+                        });
+                }
+                
+                function downloadAudio() {
+                    if (!videoId) {
+                        showResult('Please enter a valid YouTube video ID or URL', 'error');
+                        return;
+                    }
+                    
+                    showResult('Downloading... please wait', 'success');
+                    window.location.href = \`/download?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}\`;
                 }
                 
                 function showResult(message, type) {
@@ -119,15 +154,44 @@ app.get("/", (req, res) => {
     `);
 });
 
-// Download route (same as before)
-app.get("/download", async (req, res) => {
+// Route to get video title from API
+app.get("/get-title", async (req, res) => {
     const videoId = req.query.id;
     if (!videoId) {
         return res.status(400).json({ error: "Video ID is required." });
     }
 
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${videoId}.mp3`);
+    
+    try {
+        // Call the audio recognition API to get the real title
+        const apiResponse = await axios.get(`https://audio-recon-api.onrender.com/adil?url=${videoUrl}`);
+        
+        if (apiResponse.data && apiResponse.data.title) {
+            return res.json({ title: apiResponse.data.title });
+        } else {
+            return res.status(500).json({ error: "Could not retrieve video title" });
+        }
+    } catch (error) {
+        console.error("API Error:", error);
+        return res.status(500).json({ error: "Failed to get video title from API" });
+    }
+});
+
+// Download route
+app.get("/download", async (req, res) => {
+    const videoId = req.query.id;
+    let title = req.query.title || videoId;
+    
+    if (!videoId) {
+        return res.status(400).json({ error: "Video ID is required." });
+    }
+
+    // Clean the title to make it filesystem-safe
+    title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.mp3`);
 
     const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 -o "${outputPath}" "${videoUrl}"`;
 
@@ -142,7 +206,7 @@ app.get("/download", async (req, res) => {
             });
         }
 
-        res.download(outputPath, `${videoId}.mp3`, (err) => {
+        res.download(outputPath, `${title}.mp3`, (err) => {
             if (err) {
                 console.error("File send error:", err);
                 res.status(500).send("Error sending file.");
