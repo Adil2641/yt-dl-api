@@ -90,7 +90,7 @@ const HTML_TEMPLATE = `
         <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
         <button onclick="getVideoInfo()">Get Info</button>
         <div id="title"></div>
-        <button id="downloadBtn" style="display:none;" onclick="downloadVideo()">Download MP4</button>
+        <button id="downloadBtn" style="display:none;" onclick="downloadVideo()">Download Video</button>
         
         <div id="progress" style="display:none;">
             <p>Download Progress:</p>
@@ -293,10 +293,10 @@ app.get("/download-progress", (req, res) => {
 
     activeDownloads++;
 
-    // Command to download best quality MP4 video with audio
-    const command = `${ytDlpPath} --cookies ${cookiePath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    // Command to download pre-merged video (faster, no post-processing)
+    const command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
-    console.log("Running video download command:", command);
+    console.log("Running direct video download command:", command);
     
     const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
 
