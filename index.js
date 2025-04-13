@@ -59,14 +59,14 @@ function isMaliciousLink(url) {
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
-// HTML Template
+// HTML Template with MP3/MP4 selection
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Audio Downloader</title>
+    <title>YouTube Downloader</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; text-align: center; }
         .container { background-color: #f9f9f9; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -81,16 +81,25 @@ const HTML_TEMPLATE = `
         #progress { width: 100%; margin-top: 20px; display: none; }
         .progress-bar { height: 20px; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; }
         .progress { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.3s; }
+        .format-selector { margin: 15px 0; }
+        .format-selector label { margin: 0 10px; cursor: pointer; }
+        .format-selector input { width: auto; margin-right: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>YouTube Audio Downloader</h1>
+        <h1>YouTube Downloader</h1>
         <p>Enter YouTube Video ID or URL:</p>
         <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
         <button onclick="getVideoInfo()">Get Info</button>
         <div id="title"></div>
-        <button id="downloadBtn" style="display:none;" onclick="downloadAudio()">Download MP3</button>
+        
+        <div class="format-selector" id="formatSelector" style="display:none;">
+            <label><input type="radio" name="format" value="mp3" checked> MP3 (Audio)</label>
+            <label><input type="radio" name="format" value="mp4"> MP4 (Video)</label>
+        </div>
+        
+        <button id="downloadBtn" style="display:none;" onclick="downloadMedia()">Download</button>
         
         <div id="progress" style="display:none;">
             <p>Download Progress:</p>
@@ -139,6 +148,7 @@ const HTML_TEMPLATE = `
                     }
                     videoTitle = data.title;
                     document.getElementById('title').textContent = data.title;
+                    document.getElementById('formatSelector').style.display = 'block';
                     document.getElementById('downloadBtn').style.display = 'inline-block';
                     document.getElementById('downloadBtn').disabled = false;
                     showResult('Ready to download', 'success');
@@ -149,18 +159,20 @@ const HTML_TEMPLATE = `
                 });
         }
         
-        function downloadAudio() {
+        function downloadMedia() {
             if (!videoId) {
                 showResult('Please enter a valid YouTube video ID or URL', 'error');
                 return;
             }
+            
+            const format = document.querySelector('input[name="format"]:checked').value;
             
             showResult('Preparing download...', 'success');
             document.getElementById('downloadBtn').disabled = true;
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}\`);
+            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -258,6 +270,7 @@ app.get("/get-title", async (req, res) => {
 app.get("/download-progress", (req, res) => {
     const videoId = req.query.id;
     let title = req.query.title || videoId;
+    const format = req.query.format || 'mp3';
     
     if (!videoId) {
         return res.status(400).json({ error: "Video ID is required." });
@@ -274,7 +287,7 @@ app.get("/download-progress", (req, res) => {
 
     // Clean title
     title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.mp3`);
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format}`);
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Check if file already exists
@@ -293,10 +306,15 @@ app.get("/download-progress", (req, res) => {
 
     activeDownloads++;
 
-    // Optimized yt-dlp command
-    const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    // Build command based on format
+    let command;
+    if (format === 'mp3') {
+        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    } else {
+        command = `${ytDlpPath} --cookies ${cookiePath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    }
 
-    console.log("Running optimized download command:", command);
+    console.log("Running download command:", command);
     
     const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
 
