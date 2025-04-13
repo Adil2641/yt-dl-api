@@ -18,6 +18,45 @@ if (!fs.existsSync(DOWNLOAD_FOLDER)) {
 // Serve static files (CSS, JS if needed)
 app.use(express.static('public'));
 
+// AI-based malicious link detection function
+async function isMaliciousLink(url) {
+    try {
+        // Check for common malicious patterns
+        const maliciousPatterns = [
+            /https?:\/\/link\/download\?id=/i,
+            /javascript:/i,
+            /data:/i,
+            /vbscript:/i,
+            /eval\(/i,
+            /document\./i,
+            /window\./i,
+            /\.php\?/i,
+            /\.asp\?/i,
+            /\.exe$/i,
+            /\.bat$/i,
+            /\.cmd$/i,
+            /\.dll$/i
+        ];
+
+        // Check against patterns
+        for (const pattern of maliciousPatterns) {
+            if (pattern.test(url)) {
+                return true;
+            }
+        }
+
+        // You could add an actual AI API call here if you have one
+        // For example:
+        // const aiResponse = await axios.post('https://ai-malicious-link-detection.com/api', { url });
+        // return aiResponse.data.isMalicious;
+
+        return false;
+    } catch (error) {
+        console.error("AI detection error:", error);
+        return true; // Fail-safe - if detection fails, assume malicious
+    }
+}
+
 // Main page route
 app.get("/", (req, res) => {
     res.send(`
@@ -29,96 +68,52 @@ app.get("/", (req, res) => {
             <title>YouTube Audio Downloader</title>
             <style>
                 body {
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    font-family: Arial, sans-serif;
                     max-width: 800px;
                     margin: 0 auto;
                     padding: 20px;
                     text-align: center;
-                    background-color: #f5f5f5;
-                    color: #333;
                 }
                 .container {
-                    background-color: white;
-                    border-radius: 12px;
-                    padding: 25px;
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-                    margin-bottom: 20px;
+                    background-color: #f9f9f9;
+                    border-radius: 8px;
+                    padding: 20px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
                 }
                 input {
-                    padding: 12px;
+                    padding: 10px;
                     width: 70%;
                     margin-right: 10px;
-                    border: 2px solid #ddd;
-                    border-radius: 6px;
-                    font-size: 16px;
-                    transition: border 0.3s;
-                }
-                input:focus {
-                    border-color: #ff0000;
-                    outline: none;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
                 }
                 button {
-                    padding: 12px 24px;
+                    padding: 10px 20px;
                     background-color: #ff0000;
                     color: white;
                     border: none;
-                    border-radius: 6px;
+                    border-radius: 4px;
                     cursor: pointer;
-                    font-size: 16px;
-                    font-weight: bold;
-                    transition: all 0.3s;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
                 }
                 button:hover {
                     background-color: #cc0000;
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
                 }
                 #result {
                     margin-top: 20px;
-                    padding: 15px;
-                    border-radius: 6px;
-                    font-size: 16px;
+                    padding: 10px;
+                    border-radius: 4px;
                 }
                 .success {
                     background-color: #d4edda;
                     color: #155724;
-                    border: 1px solid #c3e6cb;
                 }
                 .error {
                     background-color: #f8d7da;
                     color: #721c24;
-                    border: 1px solid #f5c6cb;
                 }
                 #title {
-                    margin: 15px 0;
+                    margin-top: 10px;
                     font-weight: bold;
-                    font-size: 18px;
-                    color: #333;
-                }
-                .owner-footer {
-                    margin-top: 30px;
-                    font-size: 14px;
-                    color: #666;
-                    position: relative;
-                    padding-top: 15px;
-                }
-                .owner-footer::before {
-                    content: "";
-                    position: absolute;
-                    top: 0;
-                    left: 25%;
-                    right: 25%;
-                    height: 1px;
-                    background: linear-gradient(to right, transparent, #ff0000, transparent);
-                }
-                .owner-name {
-                    font-weight: bold;
-                    color: #ff0000;
-                    font-size: 16px;
-                    letter-spacing: 1px;
-                    text-transform: uppercase;
-                    margin-left: 5px;
                 }
             </style>
         </head>
@@ -131,10 +126,6 @@ app.get("/", (req, res) => {
                 <div id="title"></div>
                 <button id="downloadBtn" style="display:none;" onclick="downloadAudio()">Download MP3</button>
                 <div id="result"></div>
-            </div>
-            
-            <div class="owner-footer">
-                Developed with ❤️ by <span class="owner-name">ADIL</span>
             </div>
             
             <script>
@@ -202,8 +193,86 @@ app.get("/", (req, res) => {
     `);
 });
 
-// ... [rest of your existing code remains the same] ...
+// Route to get video title from API
+app.get("/get-title", async (req, res) => {
+    const videoId = req.query.id;
+    if (!videoId) {
+        return res.status(400).json({ error: "Video ID is required." });
+    }
+
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    try {
+        // Call the audio recognition API to get the real title
+        const apiResponse = await axios.get(`https://audio-recon-api.onrender.com/adil?url=${videoUrl}`);
+        
+        if (apiResponse.data && apiResponse.data.title) {
+            return res.json({ title: apiResponse.data.title });
+        } else {
+            return res.status(500).json({ error: "Could not retrieve video title" });
+        }
+    } catch (error) {
+        console.error("API Error:", error);
+        return res.status(500).json({ error: "Failed to get video title from API" });
+    }
+});
+
+// Download route with security check
+app.get("/download", async (req, res) => {
+    const videoId = req.query.id;
+    let title = req.query.title || videoId;
+    
+    if (!videoId) {
+        return res.status(400).json({ error: "Video ID is required." });
+    }
+
+    // Security check - verify this is a valid YouTube video ID
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+        return res.status(400).json({ error: "Invalid YouTube video ID format." });
+    }
+
+    // AI-based malicious link detection
+    const constructedUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const isMalicious = await isMaliciousLink(constructedUrl);
+    
+    if (isMalicious) {
+        console.log(`Blocked potentially malicious download request for ID: ${videoId}`);
+        return res.status(403).json({ error: "Download request blocked for security reasons." });
+    }
+
+    // Clean the title to make it filesystem-safe
+    title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.mp3`);
+
+    const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 -o "${outputPath}" "${videoUrl}"`;
+
+    console.log("Running command:", command);
+
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error("yt-dlp error:", stderr);
+            return res.status(500).json({
+                error: "Failed to download audio.",
+                details: stderr,
+            });
+        }
+
+        res.download(outputPath, `${title}.mp3`, (err) => {
+            if (err) {
+                console.error("File send error:", err);
+                res.status(500).send("Error sending file.");
+            }
+            try {
+                fs.unlinkSync(outputPath); // Clean up file
+            } catch (err) {
+                console.warn("Failed to clean up:", err);
+            }
+        });
+    });
+});
 
 app.listen(PORT, () => {
-    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
