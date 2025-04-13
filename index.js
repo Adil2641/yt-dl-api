@@ -14,10 +14,8 @@ if (!fs.existsSync(DOWNLOAD_FOLDER)) {
     fs.mkdirSync(DOWNLOAD_FOLDER);
 }
 
-// Serve static files
 app.use(express.static('public'));
 
-// Main page route
 app.get("/", (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -25,54 +23,76 @@ app.get("/", (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>YouTube Downloader</title>
+            <title>Adil's Audio Downloader</title>
             <style>
                 body {
-                    font-family: Arial, sans-serif;
-                    max-width: 800px;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    max-width: 600px;
                     margin: 0 auto;
                     padding: 20px;
                     text-align: center;
+                    background-color: #f8f9fa;
                 }
                 .container {
-                    background-color: #f9f9f9;
-                    border-radius: 8px;
-                    padding: 20px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    background-color: white;
+                    border-radius: 10px;
+                    padding: 30px;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                }
+                .owner-name {
+                    font-family: 'Brush Script MT', cursive;
+                    font-size: 3rem;
+                    color: #e63946;
+                    margin: 10px 0;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+                    animation: fadeIn 1.5s;
+                }
+                h1 {
+                    color: #333;
+                    margin-bottom: 25px;
+                    font-weight: 600;
+                }
+                .description {
+                    color: #555;
+                    margin-bottom: 30px;
+                    font-size: 1.1rem;
                 }
                 input {
-                    padding: 10px;
-                    width: 70%;
-                    margin: 10px 0;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
+                    padding: 12px 15px;
+                    width: 80%;
+                    margin: 15px 0;
+                    border: 2px solid #ddd;
+                    border-radius: 30px;
+                    font-size: 16px;
+                    transition: all 0.3s;
                 }
-                .btn-group {
-                    margin: 20px 0;
+                input:focus {
+                    border-color: #e63946;
+                    outline: none;
+                    box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.2);
                 }
                 button {
-                    padding: 10px 20px;
-                    margin: 0 5px;
+                    padding: 14px 30px;
+                    margin: 10px 0;
+                    background-color: #e63946;
+                    color: white;
                     border: none;
-                    border-radius: 4px;
+                    border-radius: 30px;
                     cursor: pointer;
+                    font-size: 16px;
                     font-weight: bold;
-                }
-                #audioBtn {
-                    background-color: #ff0000;
-                    color: white;
-                }
-                #videoBtn {
-                    background-color: #4285f4;
-                    color: white;
+                    transition: all 0.3s;
+                    box-shadow: 0 4px 8px rgba(230, 57, 70, 0.3);
                 }
                 button:hover {
-                    opacity: 0.9;
+                    background-color: #d62839;
+                    transform: translateY(-2px);
+                    box-shadow: 0 6px 12px rgba(230, 57, 70, 0.4);
                 }
                 #result {
                     margin-top: 20px;
-                    padding: 10px;
-                    border-radius: 4px;
+                    padding: 15px;
+                    border-radius: 8px;
                     display: none;
                 }
                 .success {
@@ -83,28 +103,37 @@ app.get("/", (req, res) => {
                     background-color: #f8d7da;
                     color: #721c24;
                 }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: scale(0.9); }
+                    to { opacity: 1; transform: scale(1); }
+                }
+                .music-icon {
+                    font-size: 2rem;
+                    margin: 10px;
+                    color: #e63946;
+                }
             </style>
         </head>
         <body>
             <div class="container">
-                <h1>YouTube Downloader</h1>
-                <p>Enter YouTube Video ID or URL:</p>
-                <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
-                
-                <div class="btn-group">
-                    <button id="audioBtn" onclick="download('audio')">Download MP3</button>
-                    <button id="videoBtn" onclick="download('video')">Download MP4</button>
+                <div class="owner-name">Adil's</div>
+                <h1>YouTube Audio Downloader</h1>
+                <div class="music-icon">♫</div>
+                <div class="description">
+                    Download high quality MP3 audio from YouTube
                 </div>
+                
+                <input type="text" id="videoId" placeholder="Enter YouTube URL or video ID">
+                <button onclick="downloadAudio()">Download MP3</button>
                 
                 <div id="result"></div>
             </div>
             
             <script>
-                function download(type) {
+                function downloadAudio() {
                     const input = document.getElementById('videoId').value.trim();
                     let videoId = input;
                     
-                    // Extract ID from URL if URL was provided
                     if (input.includes('youtube.com') || input.includes('youtu.be')) {
                         try {
                             const url = new URL(input.includes('://') ? input : 'https://' + input);
@@ -120,14 +149,12 @@ app.get("/", (req, res) => {
                     }
                     
                     if (!videoId) {
-                        showResult('Please enter a valid YouTube video ID or URL', 'error');
+                        showResult('Please enter a valid YouTube URL or video ID', 'error');
                         return;
                     }
                     
-                    showResult('Preparing download...', 'success');
-                    
-                    const endpoint = type === 'audio' ? '/download-audio' : '/download-video';
-                    window.location.href = \`\${endpoint}?id=\${videoId}\`;
+                    showResult('Preparing your audio download...', 'success');
+                    window.location.href = `/download-audio?id=${videoId}`;
                 }
                 
                 function showResult(message, type) {
@@ -142,7 +169,7 @@ app.get("/", (req, res) => {
     `);
 });
 
-// Download audio (MP3) route
+// Audio download endpoint
 app.get("/download-audio", async (req, res) => {
     const videoId = req.query.id;
     if (!videoId) {
@@ -154,7 +181,7 @@ app.get("/download-audio", async (req, res) => {
 
     const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 -o "${outputPath}" "${videoUrl}"`;
 
-    console.log("Running audio command:", command);
+    console.log("Running command:", command);
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
@@ -171,46 +198,9 @@ app.get("/download-audio", async (req, res) => {
                 res.status(500).send("Error sending file.");
             }
             try {
-                fs.unlinkSync(outputPath); // Clean up file
+                fs.unlinkSync(outputPath);
             } catch (err) {
-                console.warn("Failed to clean up audio file:", err);
-            }
-        });
-    });
-});
-
-// Download video (MP4) route
-app.get("/download-video", async (req, res) => {
-    const videoId = req.query.id;
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${videoId}.mp4`);
-
-    const command = `${ytDlpPath} --cookies ${cookiePath} -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" -o "${outputPath}" "${videoUrl}"`;
-
-    console.log("Running video command:", command);
-
-    exec(command, (error, stdout, stderr) => {
-        if (error) {
-            console.error("yt-dlp error:", stderr);
-            return res.status(500).json({
-                error: "Failed to download video.",
-                details: stderr,
-            });
-        }
-
-        res.download(outputPath, `${videoId}.mp4`, (err) => {
-            if (err) {
-                console.error("File send error:", err);
-                res.status(500).send("Error sending file.");
-            }
-            try {
-                fs.unlinkSync(outputPath); // Clean up file
-            } catch (err) {
-                console.warn("Failed to clean up video file:", err);
+                console.warn("Failed to clean up:", err);
             }
         });
     });
