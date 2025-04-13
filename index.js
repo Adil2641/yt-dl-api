@@ -84,6 +84,7 @@ const HTML_TEMPLATE = `
         .download-options { margin-top: 15px; display: none; }
         .mp3-btn { background-color: #ff0000; }
         .mp4-btn { background-color: #0066cc; margin-left: 10px; }
+        .quality-select { margin-top: 10px; padding: 8px; border-radius: 4px; border: 1px solid #ddd; }
     </style>
 </head>
 <body>
@@ -97,6 +98,16 @@ const HTML_TEMPLATE = `
         <div class="download-options" id="downloadOptions">
             <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">Download MP3</button>
             <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">Download MP4</button>
+            <div id="qualityOptions" style="display: none; margin-top: 10px;">
+                <label for="qualitySelect">Quality:</label>
+                <select id="qualitySelect" class="quality-select">
+                    <option value="best">Best Quality</option>
+                    <option value="1080">1080p</option>
+                    <option value="720">720p</option>
+                    <option value="480">480p</option>
+                    <option value="360">360p</option>
+                </select>
+            </div>
         </div>
         
         <div id="progress" style="display:none;">
@@ -137,6 +148,7 @@ const HTML_TEMPLATE = `
             
             showResult('Fetching video information...', 'success');
             document.getElementById('downloadOptions').style.display = 'none';
+            document.getElementById('qualityOptions').style.display = 'none';
             
             fetch(\`/get-title?id=\${videoId}\`)
                 .then(response => response.json())
@@ -148,6 +160,7 @@ const HTML_TEMPLATE = `
                     videoTitle = data.title;
                     document.getElementById('title').textContent = data.title;
                     document.getElementById('downloadOptions').style.display = 'block';
+                    document.getElementById('qualityOptions').style.display = 'block';
                     document.getElementById('downloadMp3Btn').disabled = false;
                     document.getElementById('downloadMp4Btn').disabled = false;
                     showResult('Ready to download', 'success');
@@ -165,13 +178,14 @@ const HTML_TEMPLATE = `
             }
             
             currentFormat = format;
+            const quality = document.getElementById('qualitySelect').value;
             showResult('Preparing download...', 'success');
             document.getElementById('downloadMp3Btn').disabled = true;
             document.getElementById('downloadMp4Btn').disabled = true;
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
+            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}&quality=\${quality}\`);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -273,6 +287,7 @@ app.get("/download-progress", (req, res) => {
     const videoId = req.query.id;
     let title = req.query.title || videoId;
     const format = req.query.format || 'mp4';
+    const quality = req.query.quality || 'best';
     
     if (!videoId) {
         return res.status(400).json({ error: "Video ID is required." });
@@ -308,13 +323,21 @@ app.get("/download-progress", (req, res) => {
 
     activeDownloads++;
 
-    // Build yt-dlp command based on format
+    // Build yt-dlp command based on format and quality
     let command;
     if (format === 'mp3') {
         command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     } else {
-        // For MP4, we download the pre-merged best quality video
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        // For MP4 with quality selection
+        let qualityFilter;
+        switch(quality) {
+            case '1080': qualityFilter = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'; break;
+            case '720': qualityFilter = 'bestvideo[height<=720]+bestaudio/best[height<=720]'; break;
+            case '480': qualityFilter = 'bestvideo[height<=480]+bestaudio/best[height<=480]'; break;
+            case '360': qualityFilter = 'bestvideo[height<=360]+bestaudio/best[height<=360]'; break;
+            default: qualityFilter = 'bestvideo+bestaudio/best'; // Best quality
+        }
+        command = `${ytDlpPath} --cookies ${cookiePath} -f "${qualityFilter}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
