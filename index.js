@@ -68,30 +68,127 @@ const HTML_TEMPLATE = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Downloader</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; text-align: center; }
-        .container { background-color: #f9f9f9; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        input { padding: 10px; width: 70%; margin-right: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        button { padding: 10px 20px; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { opacity: 0.9; }
-        button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        #result { margin-top: 20px; padding: 10px; border-radius: 4px; }
-        .success { background-color: #d4edda; color: #155724; }
-        .error { background-color: #f8d7da; color: #721c24; }
-        #title { margin-top: 10px; font-weight: bold; }
-        #progress { width: 100%; margin-top: 20px; display: none; }
-        .progress-bar { height: 20px; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; }
-        .progress { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.3s; }
-        .download-options { margin-top: 15px; display: none; }
-        .mp3-btn { background-color: #ff0000; }
-        .mp4-btn { background-color: #0066cc; margin-left: 10px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            text-align: center; 
+            background-color: #f5f5f5;
+        }
+        .container { 
+            background-color: white; 
+            border-radius: 10px; 
+            padding: 25px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+        }
+        h1 {
+            color: #ff0000;
+            margin-bottom: 20px;
+        }
+        input { 
+            padding: 12px; 
+            width: 70%; 
+            margin-right: 10px; 
+            border: 1px solid #ddd; 
+            border-radius: 6px; 
+            font-size: 16px;
+        }
+        button { 
+            padding: 12px 25px; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled { 
+            background-color: #cccccc !important; 
+            cursor: not-allowed; 
+            transform: none;
+            box-shadow: none;
+        }
+        #getInfoBtn {
+            background-color: #ff0000;
+        }
+        #result { 
+            margin-top: 20px; 
+            padding: 15px; 
+            border-radius: 6px; 
+            display: none;
+        }
+        .success { 
+            background-color: #d4edda; 
+            color: #155724; 
+            border: 1px solid #c3e6cb;
+        }
+        .error { 
+            background-color: #f8d7da; 
+            color: #721c24; 
+            border: 1px solid #f5c6cb;
+        }
+        #title { 
+            margin: 15px 0; 
+            font-weight: bold; 
+            font-size: 18px;
+            color: #333;
+        }
+        #progress { 
+            width: 100%; 
+            margin: 20px 0; 
+            display: none; 
+        }
+        .progress-bar { 
+            height: 25px; 
+            background-color: #e0e0e0; 
+            border-radius: 12px; 
+            overflow: hidden; 
+        }
+        .progress { 
+            height: 100%; 
+            background-color: #4CAF50; 
+            width: 0%; 
+            transition: width 0.3s; 
+        }
+        .progress-text { 
+            margin-top: 8px; 
+            font-weight: bold;
+        }
+        .download-options { 
+            margin: 20px 0; 
+            display: none; 
+        }
+        .mp3-btn { 
+            background-color: #ff0000; 
+        }
+        .mp4-btn { 
+            background-color: #0066cc; 
+            margin-left: 15px; 
+        }
+        .input-group {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>YouTube Downloader</h1>
         <p>Enter YouTube Video ID or URL:</p>
-        <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
-        <button onclick="getVideoInfo()">Get Info</button>
+        <div class="input-group">
+            <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
+            <button id="getInfoBtn" onclick="getVideoInfo()">Get Info</button>
+        </div>
         <div id="title"></div>
         
         <div class="download-options" id="downloadOptions">
@@ -99,12 +196,12 @@ const HTML_TEMPLATE = `
             <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">Download MP4</button>
         </div>
         
-        <div id="progress" style="display:none;">
+        <div id="progress">
             <p>Download Progress:</p>
             <div class="progress-bar">
                 <div class="progress" id="progressBar"></div>
             </div>
-            <p id="progressText">0%</p>
+            <p class="progress-text" id="progressText">0%</p>
         </div>
         
         <div id="result"></div>
@@ -137,10 +234,12 @@ const HTML_TEMPLATE = `
             
             showResult('Fetching video information...', 'success');
             document.getElementById('downloadOptions').style.display = 'none';
+            document.getElementById('getInfoBtn').disabled = true;
             
             fetch(\`/get-title?id=\${videoId}\`)
                 .then(response => response.json())
                 .then(data => {
+                    document.getElementById('getInfoBtn').disabled = false;
                     if (data.error) {
                         showResult(data.error, 'error');
                         return;
@@ -153,6 +252,7 @@ const HTML_TEMPLATE = `
                     showResult('Ready to download', 'success');
                 })
                 .catch(error => {
+                    document.getElementById('getInfoBtn').disabled = false;
                     showResult('Failed to get video information', 'error');
                     console.error(error);
                 });
@@ -289,19 +389,19 @@ app.get("/download-progress", (req, res) => {
 
     // Clean title
     title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format}`);
+    const outputPath = path.join(DOWNLOAD_FOLDER, \`${title}.${format}\`);
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Check if file already exists
     if (fs.existsSync(outputPath)) {
-        res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+        res.write(\`data: ${JSON.stringify({ url: \`/download-file?path=${encodeURIComponent(outputPath)}\` })}\n\n`);
         res.end();
         return;
     }
 
     // Check concurrent download limit
     if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-        res.write(`data: ${JSON.stringify({ error: "Server busy. Please try again later." })}\n\n`);
+        res.write(\`data: ${JSON.stringify({ error: "Server busy. Please try again later." })}\n\n`);
         res.end();
         return;
     }
@@ -311,10 +411,10 @@ app.get("/download-progress", (req, res) => {
     // Build yt-dlp command based on format
     let command;
     if (format === 'mp3') {
-        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = \`${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"\`;
     } else {
         // For MP4, we download the pre-merged best quality video
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = \`${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"\`;
     }
 
     console.log("Running download command:", command);
@@ -327,16 +427,16 @@ app.get("/download-progress", (req, res) => {
         const progressMatch = data.match(/\[download\]\s+(\d+\.\d+)%/);
         if (progressMatch) {
             progress = parseFloat(progressMatch[1]);
-            res.write(`data: ${JSON.stringify({ progress })}\n\n`);
+            res.write(\`data: ${JSON.stringify({ progress })}\n\n`);
         }
     });
 
     child.on('close', (code) => {
         activeDownloads--;
         if (code === 0) {
-            res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+            res.write(\`data: ${JSON.stringify({ url: \`/download-file?path=${encodeURIComponent(outputPath)}\` })}\n\n`);
         } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
+            res.write(\`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
             try {
                 if (fs.existsSync(outputPath)) {
                     fs.unlinkSync(outputPath);
@@ -381,7 +481,7 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`CPU Cores: ${CPU_COUNT}`);
-    console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
+    console.log(\`Server running on port ${PORT}\`);
+    console.log(\`CPU Cores: ${CPU_COUNT}\`);
+    console.log(\`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}\`);
 });
