@@ -2,7 +2,6 @@ const express = require("express");
 const { exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const axios = require("axios");
 const util = require("util");
 const os = require("os");
 
@@ -225,36 +224,27 @@ app.get("/get-title", async (req, res) => {
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     
     try {
-        const source = axios.CancelToken.source();
-        const timeout = setTimeout(() => {
-            source.cancel('API request timed out');
-        }, 20000);
+        // Use yt-dlp to get the title directly
+        const { stdout } = await execPromise(
+            `${ytDlpPath} --get-title --no-warnings "${videoUrl}"`,
+            { timeout: 5000 }
+        );
 
-        const apiResponse = await axios.get(`https://audio-recon-api.onrender.com/adil?url=${videoUrl}`, {
-            cancelToken: source.token
-        });
-        
-        clearTimeout(timeout);
-
-        if (apiResponse.data?.title) {
+        const title = stdout.trim();
+        if (title) {
             titleCache.set(videoId, {
-                title: apiResponse.data.title,
+                title: title,
                 timestamp: Date.now()
             });
-            return res.json({ title: apiResponse.data.title });
+            return res.json({ title });
         }
         return res.status(500).json({ error: "Could not retrieve video title" });
     } catch (error) {
-        if (axios.isCancel(error)) {
-            console.log("API request timed out");
-            return res.status(504).json({ error: "API request timed out" });
-        }
-        console.error("API Error:", error);
-        return res.status(500).json({ error: "Failed to get video title from API" });
+        console.error("Title fetch error:", error);
+        return res.status(500).json({ error: "Failed to get video title" });
     }
 });
 
-// SSE endpoint for progress updates
 app.get("/download-progress", (req, res) => {
     const videoId = req.query.id;
     let title = req.query.title || videoId;
@@ -328,7 +318,6 @@ app.get("/download-progress", (req, res) => {
     });
 });
 
-// File download endpoint
 app.get("/download-file", (req, res) => {
     const filePath = decodeURIComponent(req.query.path);
     
