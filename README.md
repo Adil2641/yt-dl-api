@@ -1,7 +1,7 @@
 # yt-dl-api
-# Owner👑 : A DIL
+# Owner👑 : ADIL
 - **Facebook ID:**
-[ADIL](https://www.facebook.com/a.dil.605376)
+[AD IL](https://www.facebook.com/a.dil.605376)
 
 ## Active✅ API
 Now it is online
