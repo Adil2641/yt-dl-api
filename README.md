@@ -12,6 +12,10 @@ Give YT Video Id and you get audio file / mp3 file
 ## GUIDE🚀
 ### AS A WEBSITE 🔖
 
+-Example my web : https://your-api.onrender.com
+
+Go to Your Deployed URL you see the page
+you give YouTube video link/video id you will get download it's audio file/video file.
 ### AS A API🔖:
 - Browser Url: 
 
