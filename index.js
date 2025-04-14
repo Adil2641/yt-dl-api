@@ -270,6 +270,117 @@ app.get("/get-title", async (req, res) => {
     }
 });
 
+// New direct download endpoints
+app.get("/download-audio", async (req, res) => {
+    const videoId = req.query.id;
+    if (!videoId) {
+        return res.status(400).json({ error: "Video ID is required." });
+    }
+
+    try {
+        // Get video title first
+        const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
+        const title = titleResponse.data.title || videoId;
+        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp3`);
+        
+        // Check if file already exists
+        if (fs.existsSync(outputPath)) {
+            return res.download(outputPath, `${cleanTitle}.mp3`);
+        }
+
+        // Check concurrent download limit
+        if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+            return res.status(429).json({ error: "Server busy. Please try again later." });
+        }
+
+        activeDownloads++;
+
+        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+
+        console.log("Running audio download command:", command);
+        
+        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        
+        activeDownloads--;
+        return res.download(outputPath, `${cleanTitle}.mp3`, (err) => {
+            if (err) {
+                console.error("Download error:", err);
+                return res.status(500).json({ error: "Download failed" });
+            }
+            
+            // Schedule cleanup after 1 hour
+            setTimeout(() => {
+                try {
+                    fs.unlinkSync(outputPath);
+                } catch (err) {
+                    console.error("Cleanup error:", err);
+                }
+            }, 3600000);
+        });
+    } catch (error) {
+        activeDownloads--;
+        console.error("Audio download error:", error);
+        return res.status(500).json({ error: "Failed to download audio" });
+    }
+});
+
+app.get("/download-video", async (req, res) => {
+    const videoId = req.query.id;
+    if (!videoId) {
+        return res.status(400).json({ error: "Video ID is required." });
+    }
+
+    try {
+        // Get video title first
+        const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
+        const title = titleResponse.data.title || videoId;
+        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp4`);
+        
+        // Check if file already exists
+        if (fs.existsSync(outputPath)) {
+            return res.download(outputPath, `${cleanTitle}.mp4`);
+        }
+
+        // Check concurrent download limit
+        if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+            return res.status(429).json({ error: "Server busy. Please try again later." });
+        }
+
+        activeDownloads++;
+
+        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+        const command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+
+        console.log("Running video download command:", command);
+        
+        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        
+        activeDownloads--;
+        return res.download(outputPath, `${cleanTitle}.mp4`, (err) => {
+            if (err) {
+                console.error("Download error:", err);
+                return res.status(500).json({ error: "Download failed" });
+            }
+            
+            // Schedule cleanup after 1 hour
+            setTimeout(() => {
+                try {
+                    fs.unlinkSync(outputPath);
+                } catch (err) {
+                    console.error("Cleanup error:", err);
+                }
+            }, 3600000);
+        });
+    } catch (error) {
+        activeDownloads--;
+        console.error("Video download error:", error);
+        return res.status(500).json({ error: "Failed to download video" });
+    }
+});
+
 // SSE endpoint for progress updates
 app.get("/download-progress", (req, res) => {
     const videoId = req.query.id;
