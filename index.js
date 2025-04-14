@@ -270,6 +270,110 @@ app.get("/get-title", async (req, res) => {
     }
 });
 
+// Direct video download endpoint
+app.get("/download-video", async (req, res) => {
+    const videoId = req.query.id;
+    if (!videoId) {
+        return res.status(400).json({ error: "Video ID is required." });
+    }
+
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+        return res.status(400).json({ error: "Invalid YouTube video ID format." });
+    }
+
+    // Check concurrent download limit
+    if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+        return res.status(429).json({ error: "Server busy. Please try again later." });
+    }
+
+    activeDownloads++;
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${videoId}.mp4`);
+
+    try {
+        // Check if file already exists
+        if (fs.existsSync(outputPath)) {
+            return res.download(outputPath, `${videoId}.mp4`);
+        }
+
+        const command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        
+        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        
+        res.download(outputPath, `${videoId}.mp4`, (err) => {
+            if (err) {
+                console.error("Download error:", err);
+                res.status(500).json({ error: "Download failed" });
+            }
+            // Schedule cleanup after 1 hour
+            setTimeout(() => {
+                try {
+                    fs.unlinkSync(outputPath);
+                } catch (err) {
+                    console.error("Cleanup error:", err);
+                }
+            }, 3600000);
+        });
+    } catch (error) {
+        console.error("Download error:", error);
+        res.status(500).json({ error: "Download failed" });
+    } finally {
+        activeDownloads--;
+    }
+});
+
+// Direct audio download endpoint
+app.get("/download-audio", async (req, res) => {
+    const videoId = req.query.id;
+    if (!videoId) {
+        return res.status(400).json({ error: "Video ID is required." });
+    }
+
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+        return res.status(400).json({ error: "Invalid YouTube video ID format." });
+    }
+
+    // Check concurrent download limit
+    if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+        return res.status(429).json({ error: "Server busy. Please try again later." });
+    }
+
+    activeDownloads++;
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${videoId}.mp3`);
+
+    try {
+        // Check if file already exists
+        if (fs.existsSync(outputPath)) {
+            return res.download(outputPath, `${videoId}.mp3`);
+        }
+
+        const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        
+        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        
+        res.download(outputPath, `${videoId}.mp3`, (err) => {
+            if (err) {
+                console.error("Download error:", err);
+                res.status(500).json({ error: "Download failed" });
+            }
+            // Schedule cleanup after 1 hour
+            setTimeout(() => {
+                try {
+                    fs.unlinkSync(outputPath);
+                } catch (err) {
+                    console.error("Cleanup error:", err);
+                }
+            }, 3600000);
+        });
+    } catch (error) {
+        console.error("Download error:", error);
+        res.status(500).json({ error: "Download failed" });
+    } finally {
+        activeDownloads--;
+    }
+});
+
 // SSE endpoint for progress updates
 app.get("/download-progress", (req, res) => {
     const videoId = req.query.id;
