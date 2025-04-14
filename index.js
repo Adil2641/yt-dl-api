@@ -124,6 +124,15 @@ const HTML_TEMPLATE = `
             font-weight: bold;
         }
         
+        .owner a {
+            color: white;
+            text-decoration: none;
+        }
+        
+        .owner a:hover {
+            text-decoration: underline;
+        }
+        
         .tagline {
             color: #666;
             font-size: 1.1rem;
@@ -301,7 +310,7 @@ const HTML_TEMPLATE = `
 <body>
     <div class="container">
         <header>
-            <div class="owner">ADIL</div>
+            <div class="owner"><a href="https://www.facebook.com/a.dil.605376/" target="_blank">ADIL</a></div>
             <h1>YouTube Downloader</h1>
             <p class="tagline">Download your favorite YouTube videos and music</p>
         </header>
