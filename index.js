@@ -15,7 +15,7 @@ const ytDlpPath = path.join(__dirname, "bin", "yt-dlp");
 const cookiePath = path.join(__dirname, "cookies.txt");
 const MAX_CONCURRENT_DOWNLOADS = 3;
 const DOWNLOAD_TIMEOUT = 300000; // 5 minutes
-const TITLE_CACHE_TTL = 3600000; // 1 hour
+const TITLE_CACHE_TTL = 86400000; // 1 day
 
 // Convert exec to promise-based
 const execPromise = util.promisify(exec);
@@ -553,7 +553,7 @@ app.get("/download-audio", async (req, res) => {
                 return res.status(500).json({ error: "Download failed" });
             }
             
-            // Schedule cleanup after 1 hour
+            // Schedule cleanup after 1 day
             setTimeout(() => {
                 try {
                     fs.unlinkSync(outputPath);
@@ -608,7 +608,7 @@ app.get("/download-video", async (req, res) => {
                 return res.status(500).json({ error: "Download failed" });
             }
             
-            // Schedule cleanup after 1 hour
+            // Schedule cleanup after 1 day
             setTimeout(() => {
                 try {
                     fs.unlinkSync(outputPath);
