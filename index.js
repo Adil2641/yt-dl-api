@@ -59,7 +59,7 @@ function isMaliciousLink(url) {
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
-// HTML Template
+// HTML Template with improved design and owner name
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
@@ -68,49 +68,276 @@ const HTML_TEMPLATE = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Downloader</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; text-align: center; }
-        .container { background-color: #f9f9f9; border-radius: 8px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        input { padding: 10px; width: 70%; margin-right: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        button { padding: 10px 20px; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { opacity: 0.9; }
-        button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        .get-info-btn { background-color: #ff0000; }
-        .mp3-btn { background-color: #ff0000; }
-        .mp4-btn { background-color: #0066cc; margin-left: 10px; }
-        #result { margin-top: 20px; padding: 10px; border-radius: 4px; }
-        .success { background-color: #d4edda; color: #155724; }
-        .error { background-color: #f8d7da; color: #721c24; }
-        #title { margin-top: 10px; font-weight: bold; }
-        #progress { width: 100%; margin-top: 20px; display: none; }
-        .progress-bar { height: 20px; background-color: #e0e0e0; border-radius: 10px; overflow: hidden; }
-        .progress { height: 100%; background-color: #4CAF50; width: 0%; transition: width 0.3s; }
-        .progress-text { margin-top: 5px; }
-        .download-options { margin-top: 15px; display: none; }
+        :root {
+            --primary-color: #ff0000;
+            --secondary-color: #0066cc;
+            --dark-color: #333;
+            --light-color: #f8f9fa;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: var(--dark-color);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+        
+        h1 {
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+            font-size: 2.5rem;
+        }
+        
+        .owner {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+        
+        .tagline {
+            color: #666;
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .input-group {
+            display: flex;
+            margin-bottom: 1rem;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 30px;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(255, 0, 0, 0.1);
+        }
+        
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 30px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-left: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .get-info-btn {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .mp3-btn {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .mp4-btn {
+            background-color: var(--secondary-color);
+            color: white;
+        }
+        
+        #title {
+            margin: 1.5rem 0;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--dark-color);
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .download-options {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 1.5rem 0;
+            opacity: 0;
+            height: 0;
+            overflow: hidden;
+            transition: all 0.5s ease;
+        }
+        
+        .download-options.show {
+            opacity: 1;
+            height: auto;
+        }
+        
+        #progress {
+            margin: 2rem 0;
+            display: none;
+        }
+        
+        .progress-container {
+            background-color: #e9ecef;
+            border-radius: 10px;
+            height: 20px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), #ff6b6b);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        
+        .progress-text {
+            text-align: center;
+            font-weight: bold;
+            color: var(--dark-color);
+        }
+        
+        #result {
+            padding: 15px;
+            margin: 1rem 0;
+            border-radius: 5px;
+            text-align: center;
+            display: none;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 1rem;
+                padding: 1.5rem;
+            }
+            
+            .input-group {
+                flex-direction: column;
+            }
+            
+            button {
+                margin-left: 0;
+                margin-top: 10px;
+                width: 100%;
+            }
+            
+            .download-options {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .mp3-btn, .mp4-btn {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>YouTube Downloader</h1>
-        <p>Enter YouTube Video ID or URL:</p>
-        <input type="text" id="videoId" placeholder="e.g., dQw4w9WgXcQ or https://youtu.be/dQw4w9WgXcQ">
-        <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+        <header>
+            <div class="owner">ADIL</div>
+            <h1>YouTube Downloader</h1>
+            <p class="tagline">Download your favorite YouTube videos and music</p>
+        </header>
+        
+        <div class="input-group">
+            <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
+            <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+        </div>
+        
         <div id="title"></div>
         
         <div class="download-options" id="downloadOptions">
-            <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">Download MP3</button>
-            <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">Download MP4</button>
+            <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
+                <i class="fas fa-music"></i> Download MP3
+            </button>
+            <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
+                <i class="fas fa-video"></i> Download MP4
+            </button>
         </div>
         
-        <div id="progress" style="display:none;">
-            <p>Download Progress:</p>
-            <div class="progress-bar">
-                <div class="progress" id="progressBar"></div>
+        <div id="progress">
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
             </div>
-            <p id="progressText">0%</p>
+            <div class="progress-text" id="progressText">0%</div>
         </div>
         
         <div id="result"></div>
     </div>
+    
+    <footer>
+        <p>© ${new Date().getFullYear()} YouTube Downloader | All rights reserved</p>
+    </footer>
+    
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     
     <script>
         let videoTitle = '';
@@ -138,7 +365,7 @@ const HTML_TEMPLATE = `
             }
             
             showResult('Fetching video information...', 'success');
-            document.getElementById('downloadOptions').style.display = 'none';
+            document.getElementById('downloadOptions').classList.remove('show');
             
             fetch(\`/get-title?id=\${videoId}\`)
                 .then(response => response.json())
@@ -149,7 +376,7 @@ const HTML_TEMPLATE = `
                     }
                     videoTitle = data.title;
                     document.getElementById('title').textContent = data.title;
-                    document.getElementById('downloadOptions').style.display = 'block';
+                    document.getElementById('downloadOptions').classList.add('show');
                     document.getElementById('downloadMp3Btn').disabled = false;
                     document.getElementById('downloadMp4Btn').disabled = false;
                     showResult('Ready to download', 'success');
@@ -214,6 +441,13 @@ const HTML_TEMPLATE = `
             resultDiv.className = type;
             resultDiv.style.display = 'block';
         }
+        
+        // Handle Enter key press
+        document.getElementById('videoId').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                getVideoInfo();
+            }
+        });
     </script>
 </body>
 </html>
