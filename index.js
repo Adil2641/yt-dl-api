@@ -560,7 +560,7 @@ app.get("/download-audio", async (req, res) => {
                 } catch (err) {
                     console.error("Cleanup error:", err);
                 }
-            }, 3600000);
+            }, 86400000); // 1 minute = 60000
         });
     } catch (error) {
         activeDownloads--;
@@ -615,7 +615,7 @@ app.get("/download-video", async (req, res) => {
                 } catch (err) {
                     console.error("Cleanup error:", err);
                 }
-            }, 3600000);
+            }, 86400000); // 1 minute = 60000
         });
     } catch (error) {
         activeDownloads--;
@@ -719,14 +719,14 @@ app.get("/download-file", (req, res) => {
             return res.status(500).send("Download failed");
         }
         
-        // Schedule cleanup after 1 hour
+        // Schedule cleanup after 1 day
         setTimeout(() => {
             try {
                 fs.unlinkSync(filePath);
             } catch (err) {
                 console.error("Cleanup error:", err);
             }
-        }, 3600000);
+        }, 86400000); // 1 minute = 60000
     });
 });
 
