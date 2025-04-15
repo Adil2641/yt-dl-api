@@ -15,7 +15,7 @@ const ytDlpPath = path.join(__dirname, "bin", "yt-dlp");
 const cookiePath = path.join(__dirname, "cookies.txt");
 const MAX_CONCURRENT_DOWNLOADS = 3;
 const DOWNLOAD_TIMEOUT = 300000; // 5 minutes
-const TITLE_CACHE_TTL = 86400000; // 1 day
+const TITLE_CACHE_TTL = 10080000; // 1 day
 
 // Convert exec to promise-based
 const execPromise = util.promisify(exec);
@@ -560,7 +560,7 @@ app.get("/download-audio", async (req, res) => {
                 } catch (err) {
                     console.error("Cleanup error:", err);
                 }
-            }, 86400000); // 1 minute = 60000
+            }, 10080000); // 1 minute = 60000
         });
     } catch (error) {
         activeDownloads--;
@@ -615,7 +615,7 @@ app.get("/download-video", async (req, res) => {
                 } catch (err) {
                     console.error("Cleanup error:", err);
                 }
-            }, 86400000); // 1 minute = 60000
+            }, 10080000); // 1 minute = 60000
         });
     } catch (error) {
         activeDownloads--;
@@ -726,7 +726,7 @@ app.get("/download-file", (req, res) => {
             } catch (err) {
                 console.error("Cleanup error:", err);
             }
-        }, 86400000); // 1 minute = 60000
+        }, 10080000); // 1 minute = 60000
     });
 });
 
