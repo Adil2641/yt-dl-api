@@ -467,24 +467,24 @@ const HTML_TEMPLATE = `
         </header>
         
         <div class="tabs">
-            <div class="tab active" onclick="switchTab('direct')">Direct Download</div>
-            <div class="tab" onclick="switchTab('search')">Search Videos</div>
+            <div class="tab active" data-tab="direct">Direct Download</div>
+            <div class="tab" data-tab="search">Search Videos</div>
         </div>
         
         <!-- Direct Download Tab -->
         <div id="direct-tab" class="tab-content active">
             <div class="input-group">
                 <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
-                <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+                <button class="get-info-btn">Get Info</button>
             </div>
             
             <div id="title"></div>
             
             <div class="download-options" id="downloadOptions">
-                <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
+                <button id="downloadMp3Btn" class="mp3-btn">
                     <i class="fas fa-music"></i> Download MP3
                 </button>
-                <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
+                <button id="downloadMp4Btn" class="mp4-btn">
                     <i class="fas fa-video"></i> Download MP4
                 </button>
             </div>
@@ -494,7 +494,7 @@ const HTML_TEMPLATE = `
         <div id="search-tab" class="tab-content">
             <div class="input-group">
                 <input type="text" id="searchQuery" placeholder="Search for YouTube videos...">
-                <button class="search-btn" onclick="searchVideos()">
+                <button class="search-btn">
                     <i class="fas fa-search"></i> Search
                 </button>
             </div>
@@ -504,10 +504,10 @@ const HTML_TEMPLATE = `
             <div class="video-player-container" id="videoPlayerContainer">
                 <div class="video-player" id="videoPlayer"></div>
                 <div class="player-actions">
-                    <button id="downloadMp3BtnPlayer" class="mp3-btn" onclick="downloadFromPlayer('mp3')">
+                    <button id="downloadMp3BtnPlayer" class="mp3-btn">
                         <i class="fas fa-music"></i> Download MP3
                     </button>
-                    <button id="downloadMp4BtnPlayer" class="mp4-btn" onclick="downloadFromPlayer('mp4')">
+                    <button id="downloadMp4BtnPlayer" class="mp4-btn">
                         <i class="fas fa-video"></i> Download MP4
                     </button>
                 </div>
@@ -532,12 +532,22 @@ const HTML_TEMPLATE = `
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     
     <script>
+        // Define all variables and functions first
         let videoTitle = '';
         let videoId = '';
         let eventSource = null;
         let currentFormat = '';
         let currentSearchResults = [];
         
+        // Helper function to show results
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = message;
+            resultDiv.className = type;
+            resultDiv.style.display = 'block';
+        }
+        
+        // Tab switching function
         function switchTab(tabName) {
             // Update tab UI
             document.querySelectorAll('.tab').forEach(function(tab) {
@@ -547,7 +557,7 @@ const HTML_TEMPLATE = `
                 content.classList.remove('active');
             });
             
-            document.querySelector('.tab[onclick="switchTab(\\'' + tabName + '\\')"]').classList.add('active');
+            document.querySelector('.tab[data-tab="' + tabName + '"]').classList.add('active');
             document.getElementById(tabName + '-tab').classList.add('active');
             
             // Reset progress and results when switching tabs
@@ -555,6 +565,7 @@ const HTML_TEMPLATE = `
             document.getElementById('result').style.display = 'none';
         }
         
+        // Get video info function
         function getVideoInfo() {
             const input = document.getElementById('videoId').value.trim();
             videoId = input;
@@ -597,6 +608,7 @@ const HTML_TEMPLATE = `
                 });
         }
         
+        // Download media function
         function downloadMedia(format) {
             if (!videoId) {
                 showResult('Please enter a valid YouTube video ID or URL', 'error');
@@ -645,6 +657,7 @@ const HTML_TEMPLATE = `
             };
         }
         
+        // Search videos function
         function searchVideos() {
             const query = document.getElementById('searchQuery').value.trim();
             if (!query) {
@@ -674,6 +687,7 @@ const HTML_TEMPLATE = `
                 });
         }
         
+        // Render search results
         function renderSearchResults(results) {
             const resultsContainer = document.getElementById('searchResults');
             resultsContainer.innerHTML = '';
@@ -686,26 +700,52 @@ const HTML_TEMPLATE = `
             results.forEach(function(video, index) {
                 const videoCard = document.createElement('div');
                 videoCard.className = 'video-card';
-                videoCard.innerHTML = '<div class="video-thumbnail" onclick="playVideo(\\'' + video.id + '\\', ' + index + ')">' +
-                    '<img src="' + video.thumbnail.replace(/\\/g, '\\\\') + '" alt="' + video.title.replace(/"/g, '&quot;') + '">' +
-                    '<div class="video-duration">' + video.duration + '</div>' +
-                    '</div>' +
-                    '<div class="video-info">' +
-                    '<div class="video-title">' + video.title + '</div>' +
-                    '<div class="video-channel">' + video.channel + '</div>' +
-                    '<div class="video-actions">' +
-                    '<button class="mp3-btn" onclick="downloadFromSearch(\\'' + video.id + '\\', \\'' + encodeURIComponent(video.title).replace(/\\/g, '\\\\') + '\\', \\'mp3\\', event)">' +
-                    '<i class="fas fa-music"></i> MP3' +
-                    '</button>' +
-                    '<button class="mp4-btn" onclick="downloadFromSearch(\\'' + video.id + '\\', \\'' + encodeURIComponent(video.title).replace(/\\/g, '\\\\') + '\\', \\'mp4\\', event)">' +
-                    '<i class="fas fa-video"></i> MP4' +
-                    '</button>' +
-                    '</div>' +
-                    '</div>';
+                
+                // Escape special characters in title and thumbnail
+                const thumbnailSrc = video.thumbnail.replace(/\\/g, '\\\\');
+                const titleEscaped = video.title.replace(/"/g, '&quot;');
+                const titleEncoded = encodeURIComponent(video.title).replace(/\\/g, '\\\\');
+                
+                videoCard.innerHTML = [
+                    '<div class="video-thumbnail">',
+                    '<img src="' + thumbnailSrc + '" alt="' + titleEscaped + '">',
+                    '<div class="video-duration">' + video.duration + '</div>',
+                    '</div>',
+                    '<div class="video-info">',
+                    '<div class="video-title">' + video.title + '</div>',
+                    '<div class="video-channel">' + video.channel + '</div>',
+                    '<div class="video-actions">',
+                    '<button class="mp3-btn" data-video-id="' + video.id + '" data-video-title="' + titleEncoded + '">',
+                    '<i class="fas fa-music"></i> MP3',
+                    '</button>',
+                    '<button class="mp4-btn" data-video-id="' + video.id + '" data-video-title="' + titleEncoded + '">',
+                    '<i class="fas fa-video"></i> MP4',
+                    '</button>',
+                    '</div>',
+                    '</div>'
+                ].join('');
+                
                 resultsContainer.appendChild(videoCard);
+                
+                // Add click handlers for the new buttons
+                videoCard.querySelector('.mp3-btn').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    downloadFromSearch(video.id, titleEncoded, 'mp3', e);
+                });
+                
+                videoCard.querySelector('.mp4-btn').addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    downloadFromSearch(video.id, titleEncoded, 'mp4', e);
+                });
+                
+                // Add click handler for the thumbnail
+                videoCard.querySelector('.video-thumbnail').addEventListener('click', function() {
+                    playVideo(video.id, index);
+                });
             });
         }
         
+        // Play video function
         function playVideo(videoId, index) {
             const video = currentSearchResults[index];
             if (!video) return;
@@ -727,11 +767,13 @@ const HTML_TEMPLATE = `
             });
         }
         
+        // Download from search results
         function downloadFromSearch(videoId, videoTitle, format, event) {
             event.stopPropagation();
             startDownload(videoId, decodeURIComponent(videoTitle), format);
         }
         
+        // Download from player
         function downloadFromPlayer(format) {
             const videoId = document.getElementById('downloadMp4BtnPlayer').getAttribute('data-video-id');
             const videoTitle = document.getElementById('downloadMp4BtnPlayer').getAttribute('data-video-title');
@@ -744,6 +786,7 @@ const HTML_TEMPLATE = `
             startDownload(videoId, videoTitle, format);
         }
         
+        // Start download function
         function startDownload(videoId, videoTitle, format) {
             currentFormat = format;
             showResult('Preparing download...', 'success');
@@ -779,24 +822,52 @@ const HTML_TEMPLATE = `
             };
         }
         
-        function showResult(message, type) {
-            const resultDiv = document.getElementById('result');
-            resultDiv.textContent = message;
-            resultDiv.className = type;
-            resultDiv.style.display = 'block';
-        }
-        
-        // Handle Enter key press
-        document.getElementById('videoId').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                getVideoInfo();
-            }
-        });
-        
-        document.getElementById('searchQuery').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                searchVideos();
-            }
+        // Initialize event listeners when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Tab switching
+            document.querySelectorAll('.tab').forEach(function(tab) {
+                tab.addEventListener('click', function() {
+                    const tabName = this.getAttribute('data-tab');
+                    switchTab(tabName);
+                });
+            });
+            
+            // Get Info button
+            document.querySelector('.get-info-btn').addEventListener('click', getVideoInfo);
+            
+            // Search button
+            document.querySelector('.search-btn').addEventListener('click', searchVideos);
+            
+            // Download buttons
+            document.getElementById('downloadMp3Btn').addEventListener('click', function() {
+                downloadMedia('mp3');
+            });
+            
+            document.getElementById('downloadMp4Btn').addEventListener('click', function() {
+                downloadMedia('mp4');
+            });
+            
+            // Player download buttons
+            document.getElementById('downloadMp3BtnPlayer').addEventListener('click', function() {
+                downloadFromPlayer('mp3');
+            });
+            
+            document.getElementById('downloadMp4BtnPlayer').addEventListener('click', function() {
+                downloadFromPlayer('mp4');
+            });
+            
+            // Enter key handlers
+            document.getElementById('videoId').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    getVideoInfo();
+                }
+            });
+            
+            document.getElementById('searchQuery').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchVideos();
+                }
+            });
         });
     </script>
 </body>
