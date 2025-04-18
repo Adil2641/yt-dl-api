@@ -92,7 +92,7 @@ const HTML_TEMPLATE = `
         }
         
         .container {
-            max-width: 800px;
+            max-width: 1000px;
             margin: 2rem auto;
             padding: 2rem;
             background: white;
@@ -137,6 +137,32 @@ const HTML_TEMPLATE = `
             color: #666;
             font-size: 1.1rem;
             margin-bottom: 1.5rem;
+        }
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab {
+            padding: 0.8rem 1.5rem;
+            cursor: pointer;
+            font-weight: bold;
+            border-bottom: 3px solid transparent;
+        }
+        
+        .tab.active {
+            border-bottom: 3px solid var(--primary-color);
+            color: var(--primary-color);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
         }
         
         .input-group {
@@ -185,6 +211,11 @@ const HTML_TEMPLATE = `
         }
         
         .get-info-btn {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .search-btn {
             background-color: var(--primary-color);
             color: white;
         }
@@ -273,6 +304,113 @@ const HTML_TEMPLATE = `
             border: 1px solid #f5c6cb;
         }
         
+        /* Search results styles */
+        .search-results {
+            margin-top: 2rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .video-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+        }
+        
+        .video-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .video-thumbnail {
+            position: relative;
+            padding-top: 56.25%; /* 16:9 aspect ratio */
+            overflow: hidden;
+        }
+        
+        .video-thumbnail img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .video-info {
+            padding: 1rem;
+        }
+        
+        .video-title {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        
+        .video-channel {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .video-duration {
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            position: absolute;
+            bottom: 0.5rem;
+            right: 0.5rem;
+        }
+        
+        .video-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1rem;
+        }
+        
+        .video-actions button {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+        
+        /* Video player styles */
+        .video-player-container {
+            margin: 2rem 0;
+            display: none;
+        }
+        
+        .video-player {
+            position: relative;
+            padding-top: 56.25%; /* 16:9 aspect ratio */
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .video-player iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .player-actions {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 1rem;
+        }
+        
         footer {
             text-align: center;
             margin-top: 3rem;
@@ -304,6 +442,19 @@ const HTML_TEMPLATE = `
             .mp3-btn, .mp4-btn {
                 width: 100%;
             }
+            
+            .search-results {
+                grid-template-columns: 1fr;
+            }
+            
+            .video-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .video-actions button {
+                width: 100%;
+            }
         }
     </style>
 </head>
@@ -315,20 +466,52 @@ const HTML_TEMPLATE = `
             <p class="tagline">Download your favorite YouTube videos and music</p>
         </header>
         
-        <div class="input-group">
-            <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
-            <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('direct')">Direct Download</div>
+            <div class="tab" onclick="switchTab('search')">Search Videos</div>
         </div>
         
-        <div id="title"></div>
+        <!-- Direct Download Tab -->
+        <div id="direct-tab" class="tab-content active">
+            <div class="input-group">
+                <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
+                <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+            </div>
+            
+            <div id="title"></div>
+            
+            <div class="download-options" id="downloadOptions">
+                <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
+                    <i class="fas fa-music"></i> Download MP3
+                </button>
+                <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
+                    <i class="fas fa-video"></i> Download MP4
+                </button>
+            </div>
+        </div>
         
-        <div class="download-options" id="downloadOptions">
-            <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
-                <i class="fas fa-music"></i> Download MP3
-            </button>
-            <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
-                <i class="fas fa-video"></i> Download MP4
-            </button>
+        <!-- Search Videos Tab -->
+        <div id="search-tab" class="tab-content">
+            <div class="input-group">
+                <input type="text" id="searchQuery" placeholder="Search for YouTube videos...">
+                <button class="search-btn" onclick="searchVideos()">
+                    <i class="fas fa-search"></i> Search
+                </button>
+            </div>
+            
+            <div id="searchResults" class="search-results"></div>
+            
+            <div class="video-player-container" id="videoPlayerContainer">
+                <div class="video-player" id="videoPlayer"></div>
+                <div class="player-actions">
+                    <button id="downloadMp3BtnPlayer" class="mp3-btn" onclick="downloadFromPlayer('mp3')">
+                        <i class="fas fa-music"></i> Download MP3
+                    </button>
+                    <button id="downloadMp4BtnPlayer" class="mp4-btn" onclick="downloadFromPlayer('mp4')">
+                        <i class="fas fa-video"></i> Download MP4
+                    </button>
+                </div>
+            </div>
         </div>
         
         <div id="progress">
@@ -353,6 +536,24 @@ const HTML_TEMPLATE = `
         let videoId = '';
         let eventSource = null;
         let currentFormat = '';
+        let currentSearchResults = [];
+        
+        function switchTab(tabName) {
+            // Update tab UI
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            
+            // Reset progress and results when switching tabs
+            document.getElementById('progress').style.display = 'none';
+            document.getElementById('result').style.display = 'none';
+        }
         
         function getVideoInfo() {
             const input = document.getElementById('videoId').value.trim();
@@ -444,6 +645,142 @@ const HTML_TEMPLATE = `
             };
         }
         
+        function searchVideos() {
+            const query = document.getElementById('searchQuery').value.trim();
+            if (!query) {
+                showResult('Please enter a search term', 'error');
+                return;
+            }
+            
+            showResult('Searching for videos...', 'success');
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('videoPlayerContainer').style.display = 'none';
+            
+            fetch(\`/search-videos?q=\${encodeURIComponent(query)}\`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showResult(data.error, 'error');
+                        return;
+                    }
+                    
+                    currentSearchResults = data.results || [];
+                    renderSearchResults(currentSearchResults);
+                    showResult(\`Found \${currentSearchResults.length} videos\`, 'success');
+                })
+                .catch(error => {
+                    showResult('Failed to search videos', 'error');
+                    console.error(error);
+                });
+        }
+        
+        function renderSearchResults(results) {
+            const resultsContainer = document.getElementById('searchResults');
+            resultsContainer.innerHTML = '';
+            
+            if (results.length === 0) {
+                resultsContainer.innerHTML = '<p>No videos found. Try a different search term.</p>';
+                return;
+            }
+            
+            results.forEach((video, index) => {
+                const videoCard = document.createElement('div');
+                videoCard.className = 'video-card';
+                videoCard.innerHTML = \`
+                    <div class="video-thumbnail" onclick="playVideo('\${video.id}', \${index})">
+                        <img src="\${video.thumbnail}" alt="\${video.title}">
+                        <div class="video-duration">\${video.duration}</div>
+                    </div>
+                    <div class="video-info">
+                        <div class="video-title">\${video.title}</div>
+                        <div class="video-channel">\${video.channel}</div>
+                        <div class="video-actions">
+                            <button class="mp3-btn" onclick="downloadFromSearch('\${video.id}', '\${encodeURIComponent(video.title)}', 'mp3', event)">
+                                <i class="fas fa-music"></i> MP3
+                            </button>
+                            <button class="mp4-btn" onclick="downloadFromSearch('\${video.id}', '\${encodeURIComponent(video.title)}', 'mp4', event)">
+                                <i class="fas fa-video"></i> MP4
+                            </button>
+                        </div>
+                    </div>
+                \`;
+                resultsContainer.appendChild(videoCard);
+            });
+        }
+        
+        function playVideo(videoId, index) {
+            const video = currentSearchResults[index];
+            if (!video) return;
+            
+            const playerContainer = document.getElementById('videoPlayerContainer');
+            const player = document.getElementById('videoPlayer');
+            
+            player.innerHTML = \`<iframe src="https://www.youtube.com/embed/\${videoId}?autoplay=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>\`;
+            
+            document.getElementById('downloadMp3BtnPlayer').setAttribute('data-video-id', videoId);
+            document.getElementById('downloadMp3BtnPlayer').setAttribute('data-video-title', video.title);
+            document.getElementById('downloadMp4BtnPlayer').setAttribute('data-video-id', videoId);
+            document.getElementById('downloadMp4BtnPlayer').setAttribute('data-video-title', video.title);
+            
+            playerContainer.style.display = 'block';
+            window.scrollTo({
+                top: playerContainer.offsetTop - 20,
+                behavior: 'smooth'
+            });
+        }
+        
+        function downloadFromSearch(videoId, videoTitle, format, event) {
+            event.stopPropagation();
+            startDownload(videoId, decodeURIComponent(videoTitle), format);
+        }
+        
+        function downloadFromPlayer(format) {
+            const videoId = document.getElementById(\`downloadMp4BtnPlayer\`).getAttribute('data-video-id');
+            const videoTitle = document.getElementById(\`downloadMp4BtnPlayer\`).getAttribute('data-video-title');
+            
+            if (!videoId) {
+                showResult('No video selected', 'error');
+                return;
+            }
+            
+            startDownload(videoId, videoTitle, format);
+        }
+        
+        function startDownload(videoId, videoTitle, format) {
+            currentFormat = format;
+            showResult('Preparing download...', 'success');
+            document.getElementById('progress').style.display = 'block';
+            
+            // Setup progress updates via SSE
+            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
+            
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.progress) {
+                    const progress = Math.round(data.progress);
+                    document.getElementById('progressBar').style.width = progress + '%';
+                    document.getElementById('progressText').textContent = progress + '%';
+                }
+                if (data.url) {
+                    // Download complete
+                    eventSource.close();
+                    window.location.href = data.url;
+                    document.getElementById('progress').style.display = 'none';
+                }
+                if (data.error) {
+                    showResult(data.error, 'error');
+                    eventSource.close();
+                    document.getElementById('progress').style.display = 'none';
+                }
+            };
+            
+            eventSource.onerror = function() {
+                showResult('Download failed', 'error');
+                document.getElementById('progress').style.display = 'none';
+                eventSource.close();
+            };
+        }
+        
         function showResult(message, type) {
             const resultDiv = document.getElementById('result');
             resultDiv.textContent = message;
@@ -455,6 +792,12 @@ const HTML_TEMPLATE = `
         document.getElementById('videoId').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 getVideoInfo();
+            }
+        });
+        
+        document.getElementById('searchQuery').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchVideos();
             }
         });
     </script>
@@ -510,6 +853,48 @@ app.get("/get-title", async (req, res) => {
         }
         console.error("API Error:", error);
         return res.status(500).json({ error: "Failed to get video title from API" });
+    }
+});
+
+// Video search endpoint
+app.get("/search-videos", async (req, res) => {
+    const query = req.query.q;
+    if (!query) {
+        return res.status(400).json({ error: "Search query is required." });
+    }
+
+    try {
+        // Use YouTube search API or scraping method
+        // Note: In a production environment, you should use the official YouTube API
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+        const response = await axios.get(searchUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
+
+        // Parse the HTML response to extract video information
+        const html = response.data;
+        const results = [];
+        
+        // This is a simplified parser - in reality you'd need a more robust solution
+        const videoPattern = /"videoRenderer":\{"videoId":"([^"]+)","thumbnail":\{"thumbnails":\[\{"url":"([^"]+)","width":\d+,"height":\d+\}.*?"title":\{"runs":\[\{"text":"([^"]+)"\}.*?"longBylineText":\{"runs":\[\{"text":"([^"]+)"\}.*?"lengthText":\{"accessibility":\{"accessibilityData":\{"label":"([^"]+)"\}.*?\}/g;
+        
+        let match;
+        while ((match = videoPattern.exec(html)) !== null && results.length < 10) {
+            results.push({
+                id: match[1],
+                thumbnail: match[2].replace('\\u0026', '&'),
+                title: match[3],
+                channel: match[4],
+                duration: match[5]
+            });
+        }
+
+        return res.json({ results });
+    } catch (error) {
+        console.error("Search error:", error);
+        return res.status(500).json({ error: "Failed to search videos" });
     }
 });
 
@@ -675,69 +1060,3 @@ app.get("/download-progress", (req, res) => {
 
     console.log("Running download command:", command);
     
-    const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
-
-    // Progress tracking
-    let progress = 0;
-    child.stderr.on('data', (data) => {
-        const progressMatch = data.match(/\[download\]\s+(\d+\.\d+)%/);
-        if (progressMatch) {
-            progress = parseFloat(progressMatch[1]);
-            res.write(`data: ${JSON.stringify({ progress })}\n\n`);
-        }
-    });
-
-    child.on('close', (code) => {
-        activeDownloads--;
-        if (code === 0) {
-            res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-        } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
-            try {
-                if (fs.existsSync(outputPath)) {
-                    fs.unlinkSync(outputPath);
-                }
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
-        }
-        res.end();
-    });
-});
-
-// File download endpoint
-app.get("/download-file", (req, res) => {
-    const filePath = decodeURIComponent(req.query.path);
-    
-    if (!filePath || !fs.existsSync(filePath)) {
-        return res.status(404).send("File not found");
-    }
-
-    res.download(filePath, path.basename(filePath), (err) => {
-        if (err) {
-            console.error("Download error:", err);
-            return res.status(500).send("Download failed");
-        }
-        
-        // Schedule cleanup after 1 week
-        setTimeout(() => {
-            try {
-                fs.unlinkSync(filePath);
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
-        }, 10080000); // 1 minute = 60000
-    });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Something broke!');
-});
-
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`CPU Cores: ${CPU_COUNT}`);
-    console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
-});
