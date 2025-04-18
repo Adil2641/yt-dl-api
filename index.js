@@ -326,7 +326,7 @@ const HTML_TEMPLATE = `
         
         .video-thumbnail {
             position: relative;
-            padding-top: 56.25%; /* 16:9 aspect ratio */
+            padding-top: 56.25%;
             overflow: hidden;
         }
         
@@ -389,7 +389,7 @@ const HTML_TEMPLATE = `
         
         .video-player {
             position: relative;
-            padding-top: 56.25%; /* 16:9 aspect ratio */
+            padding-top: 56.25%;
             background-color: #000;
             border-radius: 8px;
             overflow: hidden;
@@ -540,15 +540,15 @@ const HTML_TEMPLATE = `
         
         function switchTab(tabName) {
             // Update tab UI
-            document.querySelectorAll('.tab').forEach(tab => {
+            document.querySelectorAll('.tab').forEach(function(tab) {
                 tab.classList.remove('active');
             });
-            document.querySelectorAll('.tab-content').forEach(content => {
+            document.querySelectorAll('.tab-content').forEach(function(content) {
                 content.classList.remove('active');
             });
             
-            document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`).classList.add('active');
-            document.getElementById(`${tabName}-tab`).classList.add('active');
+            document.querySelector('.tab[onclick="switchTab(\\'' + tabName + '\\')"]').classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
             
             // Reset progress and results when switching tabs
             document.getElementById('progress').style.display = 'none';
@@ -577,9 +577,9 @@ const HTML_TEMPLATE = `
             showResult('Fetching video information...', 'success');
             document.getElementById('downloadOptions').classList.remove('show');
             
-            fetch(\`/get-title?id=\${videoId}\`)
-                .then(response => response.json())
-                .then(data => {
+            fetch('/get-title?id=' + videoId)
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     if (data.error) {
                         showResult(data.error, 'error');
                         return;
@@ -591,7 +591,7 @@ const HTML_TEMPLATE = `
                     document.getElementById('downloadMp4Btn').disabled = false;
                     showResult('Ready to download', 'success');
                 })
-                .catch(error => {
+                .catch(function(error) {
                     showResult('Failed to get video information', 'error');
                     console.error(error);
                 });
@@ -610,7 +610,7 @@ const HTML_TEMPLATE = `
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
+            eventSource = new EventSource('/download-progress?id=' + videoId + '&title=' + encodeURIComponent(videoTitle) + '&format=' + format);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -656,9 +656,9 @@ const HTML_TEMPLATE = `
             document.getElementById('searchResults').innerHTML = '';
             document.getElementById('videoPlayerContainer').style.display = 'none';
             
-            fetch(\`/search-videos?q=\${encodeURIComponent(query)}\`)
-                .then(response => response.json())
-                .then(data => {
+            fetch('/search-videos?q=' + encodeURIComponent(query))
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
                     if (data.error) {
                         showResult(data.error, 'error');
                         return;
@@ -666,9 +666,9 @@ const HTML_TEMPLATE = `
                     
                     currentSearchResults = data.results || [];
                     renderSearchResults(currentSearchResults);
-                    showResult(\`Found \${currentSearchResults.length} videos\`, 'success');
+                    showResult('Found ' + currentSearchResults.length + ' videos', 'success');
                 })
-                .catch(error => {
+                .catch(function(error) {
                     showResult('Failed to search videos', 'error');
                     console.error(error);
                 });
@@ -683,27 +683,25 @@ const HTML_TEMPLATE = `
                 return;
             }
             
-            results.forEach((video, index) => {
+            results.forEach(function(video, index) {
                 const videoCard = document.createElement('div');
                 videoCard.className = 'video-card';
-                videoCard.innerHTML = \`
-                    <div class="video-thumbnail" onclick="playVideo('\${video.id}', \${index})">
-                        <img src="\${video.thumbnail}" alt="\${video.title}">
-                        <div class="video-duration">\${video.duration}</div>
-                    </div>
-                    <div class="video-info">
-                        <div class="video-title">\${video.title}</div>
-                        <div class="video-channel">\${video.channel}</div>
-                        <div class="video-actions">
-                            <button class="mp3-btn" onclick="downloadFromSearch('\${video.id}', '\${encodeURIComponent(video.title)}', 'mp3', event)">
-                                <i class="fas fa-music"></i> MP3
-                            </button>
-                            <button class="mp4-btn" onclick="downloadFromSearch('\${video.id}', '\${encodeURIComponent(video.title)}', 'mp4', event)">
-                                <i class="fas fa-video"></i> MP4
-                            </button>
-                        </div>
-                    </div>
-                \`;
+                videoCard.innerHTML = '<div class="video-thumbnail" onclick="playVideo(\\'' + video.id + '\\', ' + index + ')">' +
+                    '<img src="' + video.thumbnail.replace(/\\/g, '\\\\') + '" alt="' + video.title.replace(/"/g, '&quot;') + '">' +
+                    '<div class="video-duration">' + video.duration + '</div>' +
+                    '</div>' +
+                    '<div class="video-info">' +
+                    '<div class="video-title">' + video.title + '</div>' +
+                    '<div class="video-channel">' + video.channel + '</div>' +
+                    '<div class="video-actions">' +
+                    '<button class="mp3-btn" onclick="downloadFromSearch(\\'' + video.id + '\\', \\'' + encodeURIComponent(video.title).replace(/\\/g, '\\\\') + '\\', \\'mp3\\', event)">' +
+                    '<i class="fas fa-music"></i> MP3' +
+                    '</button>' +
+                    '<button class="mp4-btn" onclick="downloadFromSearch(\\'' + video.id + '\\', \\'' + encodeURIComponent(video.title).replace(/\\/g, '\\\\') + '\\', \\'mp4\\', event)">' +
+                    '<i class="fas fa-video"></i> MP4' +
+                    '</button>' +
+                    '</div>' +
+                    '</div>';
                 resultsContainer.appendChild(videoCard);
             });
         }
@@ -715,7 +713,7 @@ const HTML_TEMPLATE = `
             const playerContainer = document.getElementById('videoPlayerContainer');
             const player = document.getElementById('videoPlayer');
             
-            player.innerHTML = \`<iframe src="https://www.youtube.com/embed/\${videoId}?autoplay=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>\`;
+            player.innerHTML = '<iframe src="https://www.youtube.com/embed/' + videoId + '?autoplay=1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>';
             
             document.getElementById('downloadMp3BtnPlayer').setAttribute('data-video-id', videoId);
             document.getElementById('downloadMp3BtnPlayer').setAttribute('data-video-title', video.title);
@@ -735,8 +733,8 @@ const HTML_TEMPLATE = `
         }
         
         function downloadFromPlayer(format) {
-            const videoId = document.getElementById(\`downloadMp4BtnPlayer\`).getAttribute('data-video-id');
-            const videoTitle = document.getElementById(\`downloadMp4BtnPlayer\`).getAttribute('data-video-title');
+            const videoId = document.getElementById('downloadMp4BtnPlayer').getAttribute('data-video-id');
+            const videoTitle = document.getElementById('downloadMp4BtnPlayer').getAttribute('data-video-title');
             
             if (!videoId) {
                 showResult('No video selected', 'error');
@@ -752,7 +750,7 @@ const HTML_TEMPLATE = `
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
+            eventSource = new EventSource('/download-progress?id=' + videoId + '&title=' + encodeURIComponent(videoTitle) + '&format=' + format);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -884,7 +882,7 @@ app.get("/search-videos", async (req, res) => {
         while ((match = videoPattern.exec(html)) !== null && results.length < 10) {
             results.push({
                 id: match[1],
-                thumbnail: match[2].replace('\\u0026', '&'),
+                thumbnail: match[2].replace(/\\u0026/g, '&'),
                 title: match[3],
                 channel: match[4],
                 duration: match[5]
