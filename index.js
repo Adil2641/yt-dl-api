@@ -139,6 +139,40 @@ const HTML_TEMPLATE = `
             margin-bottom: 1.5rem;
         }
         
+        /* Tab styles */
+        .tabs {
+            display: flex;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background: #f1f1f1;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 5px 5px 0 0;
+            margin-right: 5px;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            background: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
         .input-group {
             display: flex;
             margin-bottom: 1rem;
@@ -189,6 +223,11 @@ const HTML_TEMPLATE = `
             color: white;
         }
         
+        .search-btn {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
         .mp3-btn {
             background-color: var(--primary-color);
             color: white;
@@ -208,6 +247,69 @@ const HTML_TEMPLATE = `
             background-color: #f0f0f0;
             border-radius: 5px;
             text-align: center;
+        }
+        
+        /* Search results styles */
+        .search-results {
+            margin: 1.5rem 0;
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .video-result {
+            display: flex;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .video-result:hover {
+            background-color: #f9f9f9;
+        }
+        
+        .video-thumbnail {
+            width: 120px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 5px;
+            margin-right: 15px;
+        }
+        
+        .video-info {
+            flex: 1;
+        }
+        
+        .video-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: var(--dark-color);
+        }
+        
+        .video-channel {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .video-duration {
+            color: #666;
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+        
+        /* Video player styles */
+        .video-player-container {
+            margin: 1.5rem 0;
+            display: none;
+        }
+        
+        .video-player {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: #000;
+            border-radius: 5px;
         }
         
         .download-options {
@@ -304,6 +406,17 @@ const HTML_TEMPLATE = `
             .mp3-btn, .mp4-btn {
                 width: 100%;
             }
+            
+            .video-result {
+                flex-direction: column;
+            }
+            
+            .video-thumbnail {
+                width: 100%;
+                height: auto;
+                margin-right: 0;
+                margin-bottom: 10px;
+            }
         }
     </style>
 </head>
@@ -315,20 +428,53 @@ const HTML_TEMPLATE = `
             <p class="tagline">Download your favorite YouTube videos and music</p>
         </header>
         
-        <div class="input-group">
-            <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
-            <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('direct-tab')">Direct Download</div>
+            <div class="tab" onclick="switchTab('search-tab')">Search Videos</div>
         </div>
         
-        <div id="title"></div>
+        <!-- Direct Download Tab -->
+        <div id="direct-tab" class="tab-content active">
+            <div class="input-group">
+                <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
+                <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+            </div>
+            
+            <div id="title"></div>
+            
+            <div class="download-options" id="downloadOptions">
+                <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
+                    <i class="fas fa-music"></i> Download MP3
+                </button>
+                <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
+                    <i class="fas fa-video"></i> Download MP4
+                </button>
+            </div>
+        </div>
         
-        <div class="download-options" id="downloadOptions">
-            <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
-                <i class="fas fa-music"></i> Download MP3
-            </button>
-            <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
-                <i class="fas fa-video"></i> Download MP4
-            </button>
+        <!-- Search Videos Tab -->
+        <div id="search-tab" class="tab-content">
+            <div class="input-group">
+                <input type="text" id="searchQuery" placeholder="Search for YouTube videos...">
+                <button class="search-btn" onclick="searchVideos()">
+                    <i class="fas fa-search"></i> Search
+                </button>
+            </div>
+            
+            <div class="search-results" id="searchResults"></div>
+            
+            <div class="video-player-container" id="videoPlayerContainer">
+                <div class="video-player" id="videoPlayer"></div>
+                <div id="selectedVideoTitle" class="video-title" style="margin-top: 10px;"></div>
+                <div class="download-options" id="searchDownloadOptions">
+                    <button id="searchDownloadMp3Btn" class="mp3-btn" onclick="downloadSearchedMedia('mp3')">
+                        <i class="fas fa-music"></i> Download MP3
+                    </button>
+                    <button id="searchDownloadMp4Btn" class="mp4-btn" onclick="downloadSearchedMedia('mp4')">
+                        <i class="fas fa-video"></i> Download MP4
+                    </button>
+                </div>
+            </div>
         </div>
         
         <div id="progress">
@@ -348,12 +494,38 @@ const HTML_TEMPLATE = `
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     
+    <!-- YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    
     <script>
         let videoTitle = '';
         let videoId = '';
         let eventSource = null;
         let currentFormat = '';
+        let player = null;
+        let currentSearchResults = [];
         
+        // Tab switching
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            document.getElementById(tabId).classList.add('active');
+            document.querySelector(`.tab[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            
+            // Reset search tab when switching to it
+            if (tabId === 'search-tab') {
+                document.getElementById('searchResults').innerHTML = '';
+                document.getElementById('videoPlayerContainer').style.display = 'none';
+                document.getElementById('searchQuery').value = '';
+            }
+        }
+        
+        // Direct download functions
         function getVideoInfo() {
             const input = document.getElementById('videoId').value.trim();
             videoId = input;
@@ -444,6 +616,139 @@ const HTML_TEMPLATE = `
             };
         }
         
+        // Search functions
+        function searchVideos() {
+            const query = document.getElementById('searchQuery').value.trim();
+            if (!query) {
+                showResult('Please enter a search term', 'error');
+                return;
+            }
+            
+            showResult('Searching for videos...', 'success');
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('videoPlayerContainer').style.display = 'none';
+            
+            fetch(\`/search-videos?q=\${encodeURIComponent(query)}\`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showResult(data.error, 'error');
+                        return;
+                    }
+                    
+                    currentSearchResults = data.results;
+                    renderSearchResults(data.results);
+                    showResult(\`Found \${data.results.length} videos\`, 'success');
+                })
+                .catch(error => {
+                    showResult('Failed to search videos', 'error');
+                    console.error(error);
+                });
+        }
+        
+        function renderSearchResults(results) {
+            const resultsContainer = document.getElementById('searchResults');
+            resultsContainer.innerHTML = '';
+            
+            if (results.length === 0) {
+                resultsContainer.innerHTML = '<p>No videos found. Try a different search term.</p>';
+                return;
+            }
+            
+            results.forEach((video, index) => {
+                const videoElement = document.createElement('div');
+                videoElement.className = 'video-result';
+                videoElement.onclick = () => playVideo(video);
+                
+                videoElement.innerHTML = \`
+                    <img src="\${video.thumbnail}" alt="\${video.title}" class="video-thumbnail">
+                    <div class="video-info">
+                        <div class="video-title">\${video.title}</div>
+                        <div class="video-channel">\${video.channel}</div>
+                        <div class="video-duration">\${video.duration}</div>
+                    </div>
+                \`;
+                
+                resultsContainer.appendChild(videoElement);
+            });
+        }
+        
+        function playVideo(video) {
+            videoId = video.id;
+            videoTitle = video.title;
+            
+            document.getElementById('selectedVideoTitle').textContent = video.title;
+            document.getElementById('videoPlayerContainer').style.display = 'block';
+            document.getElementById('searchDownloadOptions').classList.add('show');
+            
+            // Scroll to player
+            document.getElementById('videoPlayerContainer').scrollIntoView({ behavior: 'smooth' });
+            
+            // Load YouTube player
+            if (player) {
+                player.loadVideoById(videoId);
+            } else {
+                player = new YT.Player('videoPlayer', {
+                    height: '360',
+                    width: '640',
+                    videoId: videoId,
+                    playerVars: {
+                        'autoplay': 1,
+                        'controls': 1,
+                        'rel': 0
+                    }
+                });
+            }
+        }
+        
+        function downloadSearchedMedia(format) {
+            if (!videoId) {
+                showResult('No video selected', 'error');
+                return;
+            }
+            
+            currentFormat = format;
+            showResult('Preparing download...', 'success');
+            document.getElementById('searchDownloadMp3Btn').disabled = true;
+            document.getElementById('searchDownloadMp4Btn').disabled = true;
+            document.getElementById('progress').style.display = 'block';
+            
+            // Setup progress updates via SSE
+            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
+            
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.progress) {
+                    const progress = Math.round(data.progress);
+                    document.getElementById('progressBar').style.width = progress + '%';
+                    document.getElementById('progressText').textContent = progress + '%';
+                }
+                if (data.url) {
+                    // Download complete
+                    eventSource.close();
+                    window.location.href = data.url;
+                    document.getElementById('progress').style.display = 'none';
+                    document.getElementById('searchDownloadMp3Btn').disabled = false;
+                    document.getElementById('searchDownloadMp4Btn').disabled = false;
+                }
+                if (data.error) {
+                    showResult(data.error, 'error');
+                    eventSource.close();
+                    document.getElementById('progress').style.display = 'none';
+                    document.getElementById('searchDownloadMp3Btn').disabled = false;
+                    document.getElementById('searchDownloadMp4Btn').disabled = false;
+                }
+            };
+            
+            eventSource.onerror = function() {
+                showResult('Download failed', 'error');
+                document.getElementById('progress').style.display = 'none';
+                document.getElementById('searchDownloadMp3Btn').disabled = false;
+                document.getElementById('searchDownloadMp4Btn').disabled = false;
+                eventSource.close();
+            };
+        }
+        
         function showResult(message, type) {
             const resultDiv = document.getElementById('result');
             resultDiv.textContent = message;
@@ -455,6 +760,12 @@ const HTML_TEMPLATE = `
         document.getElementById('videoId').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 getVideoInfo();
+            }
+        });
+        
+        document.getElementById('searchQuery').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchVideos();
             }
         });
     </script>
@@ -510,6 +821,40 @@ app.get("/get-title", async (req, res) => {
         }
         console.error("API Error:", error);
         return res.status(500).json({ error: "Failed to get video title from API" });
+    }
+});
+
+// New search endpoint
+app.get("/search-videos", async (req, res) => {
+    const query = req.query.q;
+    if (!query) {
+        return res.status(400).json({ error: "Search query is required." });
+    }
+
+    try {
+        const response = await axios.get(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
+        const html = response.data;
+        
+        // Parse the YouTube search results page (this is a simplified example)
+        // Note: YouTube's HTML structure changes frequently, so this might need adjustments
+        const results = [];
+        const regex = /"videoRenderer":\{"videoId":"([^"]+)","thumbnail":\{"thumbnails":\[\{"url":"([^"]+)","width":\d+,"height":\d+\}.*?"title":\{"runs":\[\{"text":"([^"]+)"\}.*?"longBylineText":\{"runs":\[\{"text":"([^"]+)"\}.*?"lengthText":\{"accessibility":\{"accessibilityData":\{"label":"([^"]+)"\}/g;
+        
+        let match;
+        while ((match = regex.exec(html)) !== null && results.length < 10) {
+            results.push({
+                id: match[1],
+                thumbnail: match[2].replace('\\u0026', '&'),
+                title: match[3],
+                channel: match[4],
+                duration: match[5]
+            });
+        }
+
+        return res.json({ results });
+    } catch (error) {
+        console.error("Search error:", error);
+        return res.status(500).json({ error: "Failed to search videos" });
     }
 });
 
