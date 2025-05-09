@@ -59,14 +59,15 @@ function isMaliciousLink(url) {
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
-// HTML Template with improved design and owner name
+// HTML Template with dark theme, quality selector, and enhanced features
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Downloader</title>
+    <title>YouTube Downloader Pro</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <style>
         :root {
             --primary-color: #ff0000;
@@ -76,28 +77,49 @@ const HTML_TEMPLATE = `
             --success-color: #28a745;
             --danger-color: #dc3545;
             --warning-color: #ffc107;
+            --bg-color: #f5f5f5;
+            --text-color: #333;
+            --card-bg: white;
+            --input-bg: white;
+            --progress-bg: #e9ecef;
+            --result-bg: #f0f0f0;
+            --border-color: #ddd;
+        }
+
+        .dark-mode {
+            --bg-color: #121212;
+            --text-color: #f0f0f0;
+            --card-bg: #1e1e1e;
+            --input-bg: #2d2d2d;
+            --progress-bg: #333;
+            --result-bg: #2a2a2a;
+            --border-color: #444;
+            --dark-color: #f0f0f0;
+            --light-color: #2d2d2d;
         }
         
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
+            transition: background-color 0.3s, color 0.3s;
         }
         
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f5f5f5;
-            color: var(--dark-color);
+            background-color: var(--bg-color);
+            color: var(--text-color);
             line-height: 1.6;
         }
         
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 2rem auto;
             padding: 2rem;
-            background: white;
-            border-radius: 10px;
+            background: var(--card-bg);
+            border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            position: relative;
         }
         
         header {
@@ -134,7 +156,8 @@ const HTML_TEMPLATE = `
         }
         
         .tagline {
-            color: #666;
+            color: var(--text-color);
+            opacity: 0.8;
             font-size: 1.1rem;
             margin-bottom: 1.5rem;
         }
@@ -142,15 +165,17 @@ const HTML_TEMPLATE = `
         .input-group {
             display: flex;
             margin-bottom: 1rem;
+            gap: 10px;
         }
         
         input[type="text"] {
             flex: 1;
             padding: 12px 15px;
-            border: 2px solid #ddd;
+            border: 2px solid var(--border-color);
             border-radius: 30px;
             font-size: 1rem;
-            transition: all 0.3s;
+            background-color: var(--input-bg);
+            color: var(--text-color);
         }
         
         input[type="text"]:focus {
@@ -167,12 +192,11 @@ const HTML_TEMPLATE = `
             font-weight: bold;
             cursor: pointer;
             transition: all 0.3s;
-            margin-left: 10px;
         }
         
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
         
         button:active {
@@ -203,16 +227,16 @@ const HTML_TEMPLATE = `
             margin: 1.5rem 0;
             font-size: 1.2rem;
             font-weight: bold;
-            color: var(--dark-color);
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-radius: 5px;
+            color: var(--text-color);
+            padding: 15px;
+            background-color: var(--result-bg);
+            border-radius: 10px;
             text-align: center;
         }
         
         .download-options {
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             gap: 15px;
             margin: 1.5rem 0;
             opacity: 0;
@@ -226,13 +250,46 @@ const HTML_TEMPLATE = `
             height: auto;
         }
         
+        .quality-selector {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .quality-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .quality-btn {
+            padding: 8px 15px;
+            background-color: var(--light-color);
+            color: var(--text-color);
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .quality-btn.active {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
         #progress {
             margin: 2rem 0;
             display: none;
         }
         
         .progress-container {
-            background-color: #e9ecef;
+            background-color: var(--progress-bg);
             border-radius: 10px;
             height: 20px;
             margin-bottom: 10px;
@@ -250,33 +307,86 @@ const HTML_TEMPLATE = `
         .progress-text {
             text-align: center;
             font-weight: bold;
-            color: var(--dark-color);
+            color: var(--text-color);
         }
         
         #result {
             padding: 15px;
             margin: 1rem 0;
-            border-radius: 5px;
+            border-radius: 10px;
             text-align: center;
             display: none;
+            background-color: var(--result-bg);
         }
         
         .success {
-            background-color: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
         }
         
         .error {
-            background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+        
+        .video-thumbnail {
+            width: 100%;
+            max-width: 480px;
+            height: auto;
+            border-radius: 10px;
+            margin: 1rem auto;
+            display: block;
+            border: 1px solid var(--border-color);
+        }
+        
+        .video-info {
+            display: flex;
+            justify-content: space-between;
+            margin: 1rem 0;
+            font-size: 0.9rem;
+            color: var(--text-color);
+            opacity: 0.8;
+        }
+        
+        .theme-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-color);
+            cursor: pointer;
+        }
+        
+        .features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            margin: 2rem 0;
+        }
+        
+        .feature-card {
+            background-color: var(--light-color);
+            padding: 15px;
+            border-radius: 10px;
+            width: 150px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            color: var(--primary-color);
         }
         
         footer {
             text-align: center;
             margin-top: 3rem;
-            color: #666;
+            color: var(--text-color);
+            opacity: 0.7;
             font-size: 0.9rem;
         }
         
@@ -291,44 +401,63 @@ const HTML_TEMPLATE = `
             }
             
             button {
-                margin-left: 0;
-                margin-top: 10px;
                 width: 100%;
             }
             
-            .download-options {
+            .action-buttons {
                 flex-direction: column;
-                gap: 10px;
             }
             
-            .mp3-btn, .mp4-btn {
-                width: 100%;
+            .quality-options {
+                flex-direction: column;
+                align-items: center;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <button class="theme-toggle" id="themeToggle">
+            <i class="fas fa-moon"></i>
+        </button>
+        
         <header>
             <div class="owner"><a href="https://www.facebook.com/a.dil.605376/" target="_blank">ADIL</a></div>
-            <h1>YouTube Downloader</h1>
-            <p class="tagline">Download your favorite YouTube videos and music</p>
+            <h1>YouTube Downloader Pro</h1>
+            <p class="tagline">Download videos and music in highest quality</p>
         </header>
         
         <div class="input-group">
             <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
-            <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
+            <button class="get-info-btn" onclick="getVideoInfo()">
+                <i class="fas fa-info-circle"></i> Get Info
+            </button>
         </div>
         
         <div id="title"></div>
+        <img id="videoThumbnail" class="video-thumbnail" style="display: none;">
+        <div class="video-info" id="videoInfo" style="display: none;"></div>
         
         <div class="download-options" id="downloadOptions">
-            <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
-                <i class="fas fa-music"></i> Download MP3
-            </button>
-            <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
-                <i class="fas fa-video"></i> Download MP4
-            </button>
+            <div class="quality-selector">
+                <h3>Select Quality:</h3>
+                <div class="quality-options" id="qualityOptions">
+                    <button class="quality-btn active" data-quality="best" onclick="setQuality(this)">Best Quality</button>
+                    <button class="quality-btn" data-quality="1080" onclick="setQuality(this)">1080p</button>
+                    <button class="quality-btn" data-quality="720" onclick="setQuality(this)">720p</button>
+                    <button class="quality-btn" data-quality="480" onclick="setQuality(this)">480p</button>
+                    <button class="quality-btn" data-quality="360" onclick="setQuality(this)">360p</button>
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <button id="downloadMp3Btn" class="mp3-btn" onclick="downloadMedia('mp3')">
+                    <i class="fas fa-music"></i> Download MP3
+                </button>
+                <button id="downloadMp4Btn" class="mp4-btn" onclick="downloadMedia('mp4')">
+                    <i class="fas fa-video"></i> Download MP4
+                </button>
+            </div>
         </div>
         
         <div id="progress">
@@ -339,20 +468,83 @@ const HTML_TEMPLATE = `
         </div>
         
         <div id="result"></div>
+        
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-tachometer-alt"></i></div>
+                <h3>Fast</h3>
+                <p>High-speed downloads</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-lock"></i></div>
+                <h3>Secure</h3>
+                <p>No data collection</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-bolt"></i></div>
+                <h3>Powerful</h3>
+                <p>All formats supported</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fas fa-adjust"></i></div>
+                <h3>Dark Mode</h3>
+                <p>Easy on your eyes</p>
+            </div>
+        </div>
     </div>
     
     <footer>
-        <p>© ${new Date().getFullYear()} YouTube Downloader | All rights reserved</p>
+        <p>© ${new Date().getFullYear()} YouTube Downloader Pro | All rights reserved</p>
     </footer>
-    
-    <!-- Font Awesome for icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     
     <script>
         let videoTitle = '';
         let videoId = '';
         let eventSource = null;
         let currentFormat = '';
+        let selectedQuality = 'best';
+        let videoDuration = 0;
+        let videoViews = 0;
+        
+        // Check for saved theme preference
+        if (localStorage.getItem('darkMode') {
+            document.body.classList.add('dark-mode');
+            document.getElementById('themeToggle').innerHTML = '<i class="fas fa-sun"></i>';
+        }
+        
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('click', function() {
+            document.body.classList.toggle('dark-mode');
+            if (document.body.classList.contains('dark-mode')) {
+                localStorage.setItem('darkMode', 'enabled');
+                this.innerHTML = '<i class="fas fa-sun"></i>';
+            } else {
+                localStorage.removeItem('darkMode');
+                this.innerHTML = '<i class="fas fa-moon"></i>';
+            }
+        });
+        
+        function setQuality(btn) {
+            document.querySelectorAll('.quality-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedQuality = btn.dataset.quality;
+        }
+        
+        function formatDuration(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            return [
+                hours.toString().padStart(2, '0'),
+                minutes.toString().padStart(2, '0'),
+                secs.toString().padStart(2, '0')
+            ].join(':');
+        }
+        
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
         
         function getVideoInfo() {
             const input = document.getElementById('videoId').value.trim();
@@ -375,16 +567,32 @@ const HTML_TEMPLATE = `
             
             showResult('Fetching video information...', 'success');
             document.getElementById('downloadOptions').classList.remove('show');
+            document.getElementById('videoThumbnail').style.display = 'none';
+            document.getElementById('videoInfo').style.display = 'none';
             
-            fetch(\`/get-title?id=\${videoId}\`)
+            fetch(\`/get-info?id=\${videoId}\`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.error) {
                         showResult(data.error, 'error');
                         return;
                     }
+                    
                     videoTitle = data.title;
+                    videoDuration = data.duration || 0;
+                    videoViews = data.views || 0;
+                    
                     document.getElementById('title').textContent = data.title;
+                    document.getElementById('videoThumbnail').src = data.thumbnail || \`https://img.youtube.com/vi/\${videoId}/maxresdefault.jpg\`;
+                    document.getElementById('videoThumbnail').style.display = 'block';
+                    
+                    const videoInfoDiv = document.getElementById('videoInfo');
+                    videoInfoDiv.innerHTML = \`
+                        <span><i class="fas fa-clock"></i> \${formatDuration(videoDuration)}</span>
+                        <span><i class="fas fa-eye"></i> \${formatNumber(videoViews)} views</span>
+                    \`;
+                    videoInfoDiv.style.display = 'flex';
+                    
                     document.getElementById('downloadOptions').classList.add('show');
                     document.getElementById('downloadMp3Btn').disabled = false;
                     document.getElementById('downloadMp4Btn').disabled = false;
@@ -409,7 +617,7 @@ const HTML_TEMPLATE = `
             document.getElementById('progress').style.display = 'block';
             
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
+            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}&quality=\${selectedQuality}\`);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
@@ -417,6 +625,11 @@ const HTML_TEMPLATE = `
                     const progress = Math.round(data.progress);
                     document.getElementById('progressBar').style.width = progress + '%';
                     document.getElementById('progressText').textContent = progress + '%';
+                    
+                    // Update title with progress
+                    if (progress < 100) {
+                        document.getElementById('title').textContent = \`\${videoTitle} (\${progress}%)\`;
+                    }
                 }
                 if (data.url) {
                     // Download complete
@@ -425,6 +638,7 @@ const HTML_TEMPLATE = `
                     document.getElementById('progress').style.display = 'none';
                     document.getElementById('downloadMp3Btn').disabled = false;
                     document.getElementById('downloadMp4Btn').disabled = false;
+                    document.getElementById('title').textContent = videoTitle;
                 }
                 if (data.error) {
                     showResult(data.error, 'error');
@@ -432,6 +646,7 @@ const HTML_TEMPLATE = `
                     document.getElementById('progress').style.display = 'none';
                     document.getElementById('downloadMp3Btn').disabled = false;
                     document.getElementById('downloadMp4Btn').disabled = false;
+                    document.getElementById('title').textContent = videoTitle;
                 }
             };
             
@@ -440,6 +655,7 @@ const HTML_TEMPLATE = `
                 document.getElementById('progress').style.display = 'none';
                 document.getElementById('downloadMp3Btn').disabled = false;
                 document.getElementById('downloadMp4Btn').disabled = false;
+                document.getElementById('title').textContent = videoTitle;
                 eventSource.close();
             };
         }
@@ -467,7 +683,7 @@ app.get("/", (req, res) => {
     res.send(HTML_TEMPLATE);
 });
 
-app.get("/get-title", async (req, res) => {
+app.get("/get-info", async (req, res) => {
     const videoId = req.query.id;
     if (!videoId) {
         return res.status(400).json({ error: "Video ID is required." });
@@ -477,7 +693,12 @@ app.get("/get-title", async (req, res) => {
     if (titleCache.has(videoId)) {
         const cached = titleCache.get(videoId);
         if (Date.now() - cached.timestamp < TITLE_CACHE_TTL) {
-            return res.json({ title: cached.title });
+            return res.json({ 
+                title: cached.title,
+                duration: cached.duration,
+                views: cached.views,
+                thumbnail: cached.thumbnail
+            });
         }
     }
 
@@ -496,34 +717,39 @@ app.get("/get-title", async (req, res) => {
         clearTimeout(timeout);
 
         if (apiResponse.data?.title) {
-            titleCache.set(videoId, {
+            const videoInfo = {
                 title: apiResponse.data.title,
+                duration: apiResponse.data.duration || 0,
+                views: apiResponse.data.views || 0,
+                thumbnail: apiResponse.data.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
                 timestamp: Date.now()
-            });
-            return res.json({ title: apiResponse.data.title });
+            };
+            
+            titleCache.set(videoId, videoInfo);
+            return res.json(videoInfo);
         }
-        return res.status(500).json({ error: "Could not retrieve video title" });
+        return res.status(500).json({ error: "Could not retrieve video information" });
     } catch (error) {
         if (axios.isCancel(error)) {
             console.log("API request timed out");
             return res.status(504).json({ error: "API request timed out" });
         }
         console.error("API Error:", error);
-        return res.status(500).json({ error: "Failed to get video title from API" });
+        return res.status(500).json({ error: "Failed to get video information from API" });
     }
 });
 
-// New direct download endpoints
+// Download endpoints with quality support
 app.get("/download-audio", async (req, res) => {
-    const videoId = req.query.id;
-    if (!videoId) {
+    const { id, quality } = req.query;
+    if (!id) {
         return res.status(400).json({ error: "Video ID is required." });
     }
 
     try {
-        // Get video title first
-        const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
-        const title = titleResponse.data.title || videoId;
+        // Get video info first
+        const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
+        const title = infoResponse.data.title || id;
         const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
         const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp3`);
         
@@ -539,8 +765,8 @@ app.get("/download-audio", async (req, res) => {
 
         activeDownloads++;
 
-        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const videoUrl = `https://www.youtube.com/watch?v=${id}`;
+        let command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running audio download command:", command);
         
@@ -560,7 +786,7 @@ app.get("/download-audio", async (req, res) => {
                 } catch (err) {
                     console.error("Cleanup error:", err);
                 }
-            }, 10080000); // 1 minute = 60000
+            }, 10080000);
         });
     } catch (error) {
         activeDownloads--;
@@ -570,15 +796,15 @@ app.get("/download-audio", async (req, res) => {
 });
 
 app.get("/download-video", async (req, res) => {
-    const videoId = req.query.id;
-    if (!videoId) {
+    const { id, quality } = req.query;
+    if (!id) {
         return res.status(400).json({ error: "Video ID is required." });
     }
 
     try {
-        // Get video title first
-        const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
-        const title = titleResponse.data.title || videoId;
+        // Get video info first
+        const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
+        const title = infoResponse.data.title || id;
         const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
         const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp4`);
         
@@ -594,8 +820,14 @@ app.get("/download-video", async (req, res) => {
 
         activeDownloads++;
 
-        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        const command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const videoUrl = `https://www.youtube.com/watch?v=${id}`;
+        let format = "best";
+        
+        if (quality !== "best") {
+            format = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
+        }
+        
+        const command = `${ytDlpPath} --cookies ${cookiePath} -f "${format}" --no-playlist --merge-output-format mp4 --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running video download command:", command);
         
@@ -615,7 +847,7 @@ app.get("/download-video", async (req, res) => {
                 } catch (err) {
                     console.error("Cleanup error:", err);
                 }
-            }, 10080000); // 1 minute = 60000
+            }, 10080000);
         });
     } catch (error) {
         activeDownloads--;
@@ -624,17 +856,15 @@ app.get("/download-video", async (req, res) => {
     }
 });
 
-// SSE endpoint for progress updates
+// SSE endpoint for progress updates with quality support
 app.get("/download-progress", (req, res) => {
-    const videoId = req.query.id;
-    let title = req.query.title || videoId;
-    const format = req.query.format || 'mp4';
+    const { id, title, format, quality } = req.query;
     
-    if (!videoId) {
+    if (!id) {
         return res.status(400).json({ error: "Video ID is required." });
     }
 
-    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(id)) {
         return res.status(400).json({ error: "Invalid YouTube video ID format." });
     }
 
@@ -644,9 +874,9 @@ app.get("/download-progress", (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     // Clean title
-    title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format}`);
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
+    const videoUrl = `https://www.youtube.com/watch?v=${id}`;
 
     // Check if file already exists
     if (fs.existsSync(outputPath)) {
@@ -664,13 +894,18 @@ app.get("/download-progress", (req, res) => {
 
     activeDownloads++;
 
-    // Build yt-dlp command based on format
+    // Build yt-dlp command based on format and quality
     let command;
     if (format === 'mp3') {
-        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const audioQuality = quality === 'best' ? '0' : '5'; // 0 = best, 5 = medium quality
+        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     } else {
-        // For MP4, we download the pre-merged best quality video
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        // For MP4, we download based on selected quality
+        let formatString = "best";
+        if (quality !== "best") {
+            formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
+        }
+        command = `${ytDlpPath} --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
@@ -726,7 +961,7 @@ app.get("/download-file", (req, res) => {
             } catch (err) {
                 console.error("Cleanup error:", err);
             }
-        }, 10080000); // 1 minute = 60000
+        }, 10080000);
     });
 });
 
