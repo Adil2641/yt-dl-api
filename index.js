@@ -51,15 +51,10 @@ const MALICIOUS_PATTERNS = [
     /\.dll$/i
 ];
 
-// Optimized malicious link detection
-function isMaliciousLink(url) {
-    return MALICIOUS_PATTERNS.some(pattern => pattern.test(url));
-}
-
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
-// HTML Template with dark theme, quality selector, and enhanced features
+// HTML Template with all fixes
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
@@ -102,7 +97,7 @@ const HTML_TEMPLATE = `
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            transition: background-color 0.3s, color 0.3s;
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s;
         }
         
         body {
@@ -110,6 +105,7 @@ const HTML_TEMPLATE = `
             background-color: var(--bg-color);
             color: var(--text-color);
             line-height: 1.6;
+            min-height: 100vh;
         }
         
         .container {
@@ -206,6 +202,8 @@ const HTML_TEMPLATE = `
         button:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
         }
         
         .get-info-btn {
@@ -270,6 +268,8 @@ const HTML_TEMPLATE = `
             color: var(--text-color);
             border-radius: 20px;
             font-size: 0.9rem;
+            border: none;
+            cursor: pointer;
         }
         
         .quality-btn.active {
@@ -357,6 +357,7 @@ const HTML_TEMPLATE = `
             font-size: 1.5rem;
             color: var(--text-color);
             cursor: pointer;
+            z-index: 10;
         }
         
         .features {
@@ -429,7 +430,7 @@ const HTML_TEMPLATE = `
         
         <div class="input-group">
             <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
-            <button class="get-info-btn" onclick="getVideoInfo()">
+            <button class="get-info-btn" id="getInfoBtn">
                 <i class="fas fa-info-circle"></i> Get Info
             </button>
         </div>
@@ -506,22 +507,41 @@ const HTML_TEMPLATE = `
         let videoDuration = 0;
         let videoViews = 0;
         
-        // Check for saved theme preference
-        if (localStorage.getItem('darkMode') {
-            document.body.classList.add('dark-mode');
-            document.getElementById('themeToggle').innerHTML = '<i class="fas fa-sun"></i>';
+        // Initialize dark mode from localStorage
+        function initDarkMode() {
+            const darkModeEnabled = localStorage.getItem('darkMode') === 'enabled';
+            if (darkModeEnabled) {
+                document.body.classList.add('dark-mode');
+                document.getElementById('themeToggle').innerHTML = '<i class="fas fa-sun"></i>';
+            }
         }
         
         // Theme toggle
-        document.getElementById('themeToggle').addEventListener('click', function() {
+        function toggleDarkMode() {
             document.body.classList.toggle('dark-mode');
             if (document.body.classList.contains('dark-mode')) {
                 localStorage.setItem('darkMode', 'enabled');
-                this.innerHTML = '<i class="fas fa-sun"></i>';
+                document.getElementById('themeToggle').innerHTML = '<i class="fas fa-sun"></i>';
             } else {
                 localStorage.removeItem('darkMode');
-                this.innerHTML = '<i class="fas fa-moon"></i>';
+                document.getElementById('themeToggle').innerHTML = '<i class="fas fa-moon"></i>';
             }
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initDarkMode();
+            
+            // Set up event listeners
+            document.getElementById('themeToggle').addEventListener('click', toggleDarkMode);
+            document.getElementById('getInfoBtn').addEventListener('click', getVideoInfo);
+            
+            // Handle Enter key press
+            document.getElementById('videoId').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    getVideoInfo();
+                }
+            });
         });
         
         function setQuality(btn) {
@@ -531,6 +551,7 @@ const HTML_TEMPLATE = `
         }
         
         function formatDuration(seconds) {
+            if (!seconds) return '00:00';
             const hours = Math.floor(seconds / 3600);
             const minutes = Math.floor((seconds % 3600) / 60);
             const secs = Math.floor(seconds % 60);
@@ -539,52 +560,77 @@ const HTML_TEMPLATE = `
                 hours.toString().padStart(2, '0'),
                 minutes.toString().padStart(2, '0'),
                 secs.toString().padStart(2, '0')
-            ].join(':');
+            ].filter((part, i) => part !== '00' || i > 0).join(':');
         }
         
         function formatNumber(num) {
+            if (!num) return '0';
             return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
         }
         
         function getVideoInfo() {
             const input = document.getElementById('videoId').value.trim();
+            const getInfoBtn = document.getElementById('getInfoBtn');
             videoId = input;
             
+            // Disable button during request
+            getInfoBtn.disabled = true;
+            getInfoBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            
             // Extract ID from URL if URL was provided
-            if (input.includes('youtube.com') || input.includes('youtu.be')) {
-                const url = new URL(input.includes('://') ? input : 'https://' + input);
-                if (url.hostname === 'youtu.be') {
-                    videoId = url.pathname.slice(1);
-                } else {
-                    videoId = url.searchParams.get('v');
+            try {
+                if (input.includes('youtube.com') || input.includes('youtu.be')) {
+                    const url = new URL(input.includes('://') ? input : 'https://' + input);
+                    if (url.hostname === 'youtu.be') {
+                        videoId = url.pathname.slice(1).split(/[?&#]/)[0];
+                    } else {
+                        videoId = url.searchParams.get('v') || input;
+                    }
                 }
+            } catch (e) {
+                console.error('URL parsing error:', e);
             }
             
-            if (!videoId) {
+            if (!videoId || videoId.length < 11) {
                 showResult('Please enter a valid YouTube video ID or URL', 'error');
+                getInfoBtn.disabled = false;
+                getInfoBtn.innerHTML = '<i class="fas fa-info-circle"></i> Get Info';
                 return;
             }
+            
+            // Clean video ID (take first 11 chars)
+            videoId = videoId.substring(0, 11);
             
             showResult('Fetching video information...', 'success');
             document.getElementById('downloadOptions').classList.remove('show');
             document.getElementById('videoThumbnail').style.display = 'none';
             document.getElementById('videoInfo').style.display = 'none';
             
-            fetch(\`/get-info?id=\${videoId}\`)
-                .then(response => response.json())
+            fetch('/get-info?id=' + encodeURIComponent(videoId))
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.error) {
-                        showResult(data.error, 'error');
-                        return;
+                        throw new Error(data.error);
                     }
                     
-                    videoTitle = data.title;
+                    videoTitle = data.title || 'Unknown Title';
                     videoDuration = data.duration || 0;
                     videoViews = data.views || 0;
                     
-                    document.getElementById('title').textContent = data.title;
-                    document.getElementById('videoThumbnail').src = data.thumbnail || \`https://img.youtube.com/vi/\${videoId}/maxresdefault.jpg\`;
-                    document.getElementById('videoThumbnail').style.display = 'block';
+                    document.getElementById('title').textContent = videoTitle;
+                    
+                    const thumbnailUrl = data.thumbnail || 'https://img.youtube.com/vi/' + videoId + '/maxresdefault.jpg';
+                    const thumbnailImg = document.getElementById('videoThumbnail');
+                    thumbnailImg.src = thumbnailUrl;
+                    thumbnailImg.style.display = 'block';
+                    thumbnailImg.onerror = function() {
+                        this.src = 'https://img.youtube.com/vi/' + videoId + '/hqdefault.jpg';
+                    };
                     
                     const videoInfoDiv = document.getElementById('videoInfo');
                     videoInfoDiv.innerHTML = \`
@@ -599,8 +645,12 @@ const HTML_TEMPLATE = `
                     showResult('Ready to download', 'success');
                 })
                 .catch(error => {
-                    showResult('Failed to get video information', 'error');
-                    console.error(error);
+                    console.error('Error:', error);
+                    showResult(error.message || 'Failed to get video information', 'error');
+                })
+                .finally(() => {
+                    getInfoBtn.disabled = false;
+                    getInfoBtn.innerHTML = '<i class="fas fa-info-circle"></i> Get Info';
                 });
         }
         
@@ -616,48 +666,57 @@ const HTML_TEMPLATE = `
             document.getElementById('downloadMp4Btn').disabled = true;
             document.getElementById('progress').style.display = 'block';
             
+            // Close previous connection if exists
+            if (eventSource) {
+                eventSource.close();
+            }
+            
             // Setup progress updates via SSE
-            eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}&quality=\${selectedQuality}\`);
+            eventSource = new EventSource(\`/download-progress?id=\${encodeURIComponent(videoId)}&title=\${encodeURIComponent(videoTitle)}&format=\${format}&quality=\${selectedQuality}\`);
             
             eventSource.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                if (data.progress) {
-                    const progress = Math.round(data.progress);
-                    document.getElementById('progressBar').style.width = progress + '%';
-                    document.getElementById('progressText').textContent = progress + '%';
-                    
-                    // Update title with progress
-                    if (progress < 100) {
-                        document.getElementById('title').textContent = \`\${videoTitle} (\${progress}%)\`;
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.progress) {
+                        const progress = Math.round(data.progress);
+                        document.getElementById('progressBar').style.width = progress + '%';
+                        document.getElementById('progressText').textContent = progress + '%';
+                        
+                        // Update title with progress
+                        if (progress < 100) {
+                            document.getElementById('title').textContent = \`\${videoTitle} (\${progress}%)\`;
+                        }
                     }
-                }
-                if (data.url) {
-                    // Download complete
-                    eventSource.close();
-                    window.location.href = data.url;
-                    document.getElementById('progress').style.display = 'none';
-                    document.getElementById('downloadMp3Btn').disabled = false;
-                    document.getElementById('downloadMp4Btn').disabled = false;
-                    document.getElementById('title').textContent = videoTitle;
-                }
-                if (data.error) {
-                    showResult(data.error, 'error');
-                    eventSource.close();
-                    document.getElementById('progress').style.display = 'none';
-                    document.getElementById('downloadMp3Btn').disabled = false;
-                    document.getElementById('downloadMp4Btn').disabled = false;
-                    document.getElementById('title').textContent = videoTitle;
+                    if (data.url) {
+                        // Download complete
+                        eventSource.close();
+                        window.location.href = data.url;
+                        resetUI();
+                    }
+                    if (data.error) {
+                        showResult(data.error, 'error');
+                        eventSource.close();
+                        resetUI();
+                    }
+                } catch (e) {
+                    console.error('Error parsing SSE data:', e);
                 }
             };
             
             eventSource.onerror = function() {
-                showResult('Download failed', 'error');
-                document.getElementById('progress').style.display = 'none';
-                document.getElementById('downloadMp3Btn').disabled = false;
-                document.getElementById('downloadMp4Btn').disabled = false;
-                document.getElementById('title').textContent = videoTitle;
-                eventSource.close();
+                showResult('Download failed or was interrupted', 'error');
+                if (eventSource) eventSource.close();
+                resetUI();
             };
+        }
+        
+        function resetUI() {
+            document.getElementById('progress').style.display = 'none';
+            document.getElementById('downloadMp3Btn').disabled = false;
+            document.getElementById('downloadMp4Btn').disabled = false;
+            if (videoTitle) {
+                document.getElementById('title').textContent = videoTitle;
+            }
         }
         
         function showResult(message, type) {
@@ -665,14 +724,14 @@ const HTML_TEMPLATE = `
             resultDiv.textContent = message;
             resultDiv.className = type;
             resultDiv.style.display = 'block';
-        }
-        
-        // Handle Enter key press
-        document.getElementById('videoId').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                getVideoInfo();
+            
+            // Auto-hide success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    resultDiv.style.display = 'none';
+                }, 5000);
             }
-        });
+        }
     </script>
 </body>
 </html>
@@ -710,7 +769,7 @@ app.get("/get-info", async (req, res) => {
             source.cancel('API request timed out');
         }, 30000);
 
-        const apiResponse = await axios.get(`https://audio-recon-api-bsda.onrender.com/adil?url=${videoUrl}`, {
+        const apiResponse = await axios.get(`https://noembed.com/embed?url=${videoUrl}`, {
             cancelToken: source.token
         });
         
@@ -720,8 +779,8 @@ app.get("/get-info", async (req, res) => {
             const videoInfo = {
                 title: apiResponse.data.title,
                 duration: apiResponse.data.duration || 0,
-                views: apiResponse.data.views || 0,
-                thumbnail: apiResponse.data.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+                views: 0, // noembed doesn't provide views
+                thumbnail: apiResponse.data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
                 timestamp: Date.now()
             };
             
@@ -735,7 +794,21 @@ app.get("/get-info", async (req, res) => {
             return res.status(504).json({ error: "API request timed out" });
         }
         console.error("API Error:", error);
-        return res.status(500).json({ error: "Failed to get video information from API" });
+        
+        // Fallback to basic info if API fails
+        try {
+            const fallbackInfo = {
+                title: `YouTube Video (${videoId})`,
+                duration: 0,
+                views: 0,
+                thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+                timestamp: Date.now()
+            };
+            titleCache.set(videoId, fallbackInfo);
+            return res.json(fallbackInfo);
+        } catch (fallbackError) {
+            return res.status(500).json({ error: "Failed to get video information" });
+        }
     }
 });
 
