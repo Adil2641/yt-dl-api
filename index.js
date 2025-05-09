@@ -22,7 +22,7 @@ const execPromise = util.promisify(exec);
 
 // Create downloads folder if it doesn't exist
 if (!fs.existsSync(DOWNLOAD_FOLDER)) {
-    fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
+  fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
 }
 
 // Middleware
@@ -36,30 +36,30 @@ let activeDownloads = 0;
 
 // Security patterns
 const MALICIOUS_PATTERNS = [
-    /https?:\/\/link\/download\?id=/i,
-    /javascript:/i,
-    /data:/i,
-    /vbscript:/i,
-    /eval\(/i,
-    /document\./i,
-    /window\./i,
-    /\.php\?/i,
-    /\.asp\?/i,
-    /\.exe$/i,
-    /\.bat$/i,
-    /\.cmd$/i,
-    /\.dll$/i
+  /https?:\/\/link\/download\?id=/i,
+  /javascript:/i,
+  /data:/i,
+  /vbscript:/i,
+  /eval\(/i,
+  /document\./i,
+  /window\./i,
+  /\.php\?/i,
+  /\.asp\?/i,
+  /\.exe$/i,
+  /\.bat$/i,
+  /\.cmd$/i,
+  /\.dll$/i
 ];
 
 // Optimized malicious link detection
 function isMaliciousLink(url) {
-    return MALICIOUS_PATTERNS.some(pattern => pattern.test(url));
+  return MALICIOUS_PATTERNS.some(pattern => pattern.test(url));
 }
 
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
-// HTML Template with improved design and owner name
+// HTML Template with improved design and loading features
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
@@ -77,7 +77,7 @@ const HTML_TEMPLATE = `
             --danger-color: #dc3545;
             --warning-color: #ffc107;
         }
-        
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -231,26 +231,130 @@ const HTML_TEMPLATE = `
             display: none;
         }
         
-        .progress-container {
-            background-color: #e9ecef;
-            border-radius: 10px;
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 20px;
             height: 20px;
-            margin-bottom: 10px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Enhanced progress bar */
+        .progress-container {
+            position: relative;
+            height: 25px;
+            background-color: #f0f0f0;
+            border-radius: 12px;
             overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
         }
         
         .progress-bar {
             height: 100%;
-            background: linear-gradient(90deg, var(--primary-color), #ff6b6b);
+            background: linear-gradient(90deg, #ff0000, #ff6b6b);
             width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 10px;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(
+                90deg,
+                rgba(255,255,255,0) 0%,
+                rgba(255,255,255,0.3) 50%,
+                rgba(255,255,255,0) 100%
+            );
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
         }
         
         .progress-text {
             text-align: center;
             font-weight: bold;
             color: var(--dark-color);
+            margin-top: 8px;
+        }
+        
+        /* Download details */
+        .download-details {
+            margin-top: 1rem;
+            display: none;
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .download-details.show {
+            display: block;
+            animation: fadeIn 0.5s ease-out;
+        }
+        
+        .download-details p {
+            margin: 0.5rem 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .download-details span {
+            font-weight: bold;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Button loading state */
+        .btn-loading {
+            position: relative;
+            color: transparent !important;
+        }
+        
+        .btn-loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        /* Skeleton loading for title */
+        .skeleton {
+            background-color: #e0e0e0;
+            border-radius: 4px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 0.3; }
         }
         
         #result {
@@ -314,7 +418,7 @@ const HTML_TEMPLATE = `
             <h1>YouTube Downloader</h1>
             <p class="tagline">Download your favorite YouTube videos and music</p>
         </header>
-        
+
         <div class="input-group">
             <input type="text" id="videoId" placeholder="Enter YouTube URL or Video ID (e.g., dQw4w9WgXcQ)">
             <button class="get-info-btn" onclick="getVideoInfo()">Get Info</button>
@@ -338,21 +442,24 @@ const HTML_TEMPLATE = `
             <div class="progress-text" id="progressText">0%</div>
         </div>
         
+        <div class="download-details" id="downloadDetails"></div>
+        
         <div id="result"></div>
     </div>
-    
+
     <footer>
         <p>© ${new Date().getFullYear()} YouTube Downloader | All rights reserved</p>
     </footer>
-    
+
     <!-- Font Awesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-    
+
     <script>
         let videoTitle = '';
         let videoId = '';
         let eventSource = null;
         let currentFormat = '';
+        let downloadStartTime = null;
         
         function getVideoInfo() {
             const input = document.getElementById('videoId').value.trim();
@@ -373,6 +480,15 @@ const HTML_TEMPLATE = `
                 return;
             }
             
+            // Show loading state
+            const getInfoBtn = document.querySelector('.get-info-btn');
+            getInfoBtn.disabled = true;
+            getInfoBtn.classList.add('btn-loading');
+            
+            // Show skeleton loading for title
+            const titleElement = document.getElementById('title');
+            titleElement.innerHTML = '<div class="skeleton" style="height: 24px; width: 80%; margin: 0 auto;"></div>';
+            
             showResult('Fetching video information...', 'success');
             document.getElementById('downloadOptions').classList.remove('show');
             
@@ -384,7 +500,7 @@ const HTML_TEMPLATE = `
                         return;
                     }
                     videoTitle = data.title;
-                    document.getElementById('title').textContent = data.title;
+                    titleElement.textContent = data.title;
                     document.getElementById('downloadOptions').classList.add('show');
                     document.getElementById('downloadMp3Btn').disabled = false;
                     document.getElementById('downloadMp4Btn').disabled = false;
@@ -393,6 +509,10 @@ const HTML_TEMPLATE = `
                 .catch(error => {
                     showResult('Failed to get video information', 'error');
                     console.error(error);
+                })
+                .finally(() => {
+                    getInfoBtn.disabled = false;
+                    getInfoBtn.classList.remove('btn-loading');
                 });
         }
         
@@ -404,44 +524,122 @@ const HTML_TEMPLATE = `
             
             currentFormat = format;
             showResult('Preparing download...', 'success');
-            document.getElementById('downloadMp3Btn').disabled = true;
-            document.getElementById('downloadMp4Btn').disabled = true;
+            
+            // Set buttons to loading state
+            const mp3Btn = document.getElementById('downloadMp3Btn');
+            const mp4Btn = document.getElementById('downloadMp4Btn');
+            mp3Btn.disabled = true;
+            mp4Btn.disabled = true;
+            
+            if (format === 'mp3') {
+                mp3Btn.classList.add('btn-loading');
+            } else {
+                mp4Btn.classList.add('btn-loading');
+            }
+            
+            // Show progress and details
             document.getElementById('progress').style.display = 'block';
+            const detailsElement = document.getElementById('downloadDetails');
+            detailsElement.classList.add('show');
+            
+            // Record start time
+            downloadStartTime = new Date();
+            updateDownloadDetails();
             
             // Setup progress updates via SSE
             eventSource = new EventSource(\`/download-progress?id=\${videoId}&title=\${encodeURIComponent(videoTitle)}&format=\${format}\`);
             
             eventSource.onmessage = function(event) {
                 const data = JSON.parse(event.data);
+                
                 if (data.progress) {
                     const progress = Math.round(data.progress);
                     document.getElementById('progressBar').style.width = progress + '%';
                     document.getElementById('progressText').textContent = progress + '%';
+                    updateDownloadDetails();
                 }
+                
                 if (data.url) {
                     // Download complete
-                    eventSource.close();
-                    window.location.href = data.url;
-                    document.getElementById('progress').style.display = 'none';
-                    document.getElementById('downloadMp3Btn').disabled = false;
-                    document.getElementById('downloadMp4Btn').disabled = false;
+                    completeDownload(data.url);
                 }
+                
                 if (data.error) {
-                    showResult(data.error, 'error');
-                    eventSource.close();
-                    document.getElementById('progress').style.display = 'none';
-                    document.getElementById('downloadMp3Btn').disabled = false;
-                    document.getElementById('downloadMp4Btn').disabled = false;
+                    downloadFailed(data.error);
                 }
             };
             
             eventSource.onerror = function() {
-                showResult('Download failed', 'error');
-                document.getElementById('progress').style.display = 'none';
-                document.getElementById('downloadMp3Btn').disabled = false;
-                document.getElementById('downloadMp4Btn').disabled = false;
-                eventSource.close();
+                downloadFailed('Download failed');
             };
+        }
+        
+        function completeDownload(url) {
+            // Update UI
+            document.getElementById('progressBar').style.width = '100%';
+            document.getElementById('progressText').textContent = '100%';
+            showResult('Download complete!', 'success');
+            updateDownloadDetails(true);
+            
+            // Reset buttons
+            resetButtons();
+            
+            // Close connection
+            if (eventSource) eventSource.close();
+            
+            // Start download after a short delay to show completion
+            setTimeout(() => {
+                window.location.href = url;
+                document.getElementById('progress').style.display = 'none';
+                document.getElementById('downloadDetails').classList.remove('show');
+            }, 1000);
+        }
+        
+        function downloadFailed(error) {
+            showResult(error || 'Download failed', 'error');
+            document.getElementById('progress').style.display = 'none';
+            document.getElementById('downloadDetails').classList.remove('show');
+            resetButtons();
+            if (eventSource) eventSource.close();
+        }
+        
+        function resetButtons() {
+            const mp3Btn = document.getElementById('downloadMp3Btn');
+            const mp4Btn = document.getElementById('downloadMp4Btn');
+            mp3Btn.disabled = false;
+            mp4Btn.disabled = false;
+            mp3Btn.classList.remove('btn-loading');
+            mp4Btn.classList.remove('btn-loading');
+        }
+        
+        function updateDownloadDetails(complete = false) {
+            const detailsElement = document.getElementById('downloadDetails');
+            if (!detailsElement) return;
+            
+            const now = new Date();
+            const elapsed = downloadStartTime ? Math.floor((now - downloadStartTime) / 1000) : 0;
+            const progress = parseInt(document.getElementById('progressText').textContent) || 0;
+            
+            let detailsHTML = \`
+                <p><span>Status:</span> \${complete ? 'Completed' : 'Downloading...'}</p>
+                <p><span>Format:</span> \${currentFormat.toUpperCase()}</p>
+                <p><span>Progress:</span> \${progress}%</p>
+                <p><span>Time elapsed:</span> \${formatTime(elapsed)}</p>
+            \`;
+            
+            if (!complete && progress > 0) {
+                const estimatedTotal = Math.floor(elapsed * 100 / progress);
+                const remaining = estimatedTotal - elapsed;
+                detailsHTML += \`<p><span>Estimated time remaining:</span> \${formatTime(remaining)}</p>\`;
+            }
+            
+            detailsElement.innerHTML = detailsHTML;
+        }
+        
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return \`\${mins}m \${secs}s\`;
         }
         
         function showResult(message, type) {
@@ -464,280 +662,289 @@ const HTML_TEMPLATE = `
 
 // Routes
 app.get("/", (req, res) => {
-    res.send(HTML_TEMPLATE);
+  res.send(HTML_TEMPLATE);
 });
 
 app.get("/get-title", async (req, res) => {
-    const videoId = req.query.id;
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
+  const videoId = req.query.id;
+  if (!videoId) {
+    return res.status(400).json({ error: "Video ID is required." });
+  }
 
-    // Check cache first
-    if (titleCache.has(videoId)) {
-        const cached = titleCache.get(videoId);
-        if (Date.now() - cached.timestamp < TITLE_CACHE_TTL) {
-            return res.json({ title: cached.title });
-        }
+  // Check cache first
+  if (titleCache.has(videoId)) {
+    const cached = titleCache.get(videoId);
+    if (Date.now() - cached.timestamp < TITLE_CACHE_TTL) {
+      return res.json({ title: cached.title });
     }
+  }
 
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  try {
+    const source = axios.CancelToken.source();
+    const timeout = setTimeout(() => {
+      source.cancel('API request timed out');
+    }, 30000);
+
+    const apiResponse = await axios.get(`https://audio-recon-api-bsda.onrender.com/adil?url=${videoUrl}`, {
+      cancelToken: source.token
+    });
     
-    try {
-        const source = axios.CancelToken.source();
-        const timeout = setTimeout(() => {
-            source.cancel('API request timed out');
-        }, 30000);
+    clearTimeout(timeout);
 
-        const apiResponse = await axios.get(`https://audio-recon-api-bsda.onrender.com/adil?url=${videoUrl}`, {
-            cancelToken: source.token
-        });
-        
-        clearTimeout(timeout);
-
-        if (apiResponse.data?.title) {
-            titleCache.set(videoId, {
-                title: apiResponse.data.title,
-                timestamp: Date.now()
-            });
-            return res.json({ title: apiResponse.data.title });
-        }
-        return res.status(500).json({ error: "Could not retrieve video title" });
-    } catch (error) {
-        if (axios.isCancel(error)) {
-            console.log("API request timed out");
-            return res.status(504).json({ error: "API request timed out" });
-        }
-        console.error("API Error:", error);
-        return res.status(500).json({ error: "Failed to get video title from API" });
+    if (apiResponse.data?.title) {
+      titleCache.set(videoId, {
+        title: apiResponse.data.title,
+        timestamp: Date.now()
+      });
+      return res.json({ title: apiResponse.data.title });
     }
+    return res.status(500).json({ error: "Could not retrieve video title" });
+  } catch (error) {
+    if (axios.isCancel(error)) {
+      console.log("API request timed out");
+      return res.status(504).json({ error: "API request timed out" });
+    }
+    console.error("API Error:", error);
+    return res.status(500).json({ error: "Failed to get video title from API" });
+  }
 });
 
 // New direct download endpoints
 app.get("/download-audio", async (req, res) => {
-    const videoId = req.query.id;
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
+  const videoId = req.query.id;
+  if (!videoId) {
+    return res.status(400).json({ error: "Video ID is required." });
+  }
 
-    try {
-        // Get video title first
-        const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
-        const title = titleResponse.data.title || videoId;
-        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp3`);
-        
-        // Check if file already exists
-        if (fs.existsSync(outputPath)) {
-            return res.download(outputPath, `${cleanTitle}.mp3`);
-        }
-
-        // Check concurrent download limit
-        if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-            return res.status(429).json({ error: "Server busy. Please try again later." });
-        }
-
-        activeDownloads++;
-
-        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
-
-        console.log("Running audio download command:", command);
-        
-        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
-        
-        activeDownloads--;
-        return res.download(outputPath, `${cleanTitle}.mp3`, (err) => {
-            if (err) {
-                console.error("Download error:", err);
-                return res.status(500).json({ error: "Download failed" });
-            }
-            
-            // Schedule cleanup after 1 week
-            setTimeout(() => {
-                try {
-                    fs.unlinkSync(outputPath);
-                } catch (err) {
-                    console.error("Cleanup error:", err);
-                }
-            }, 10080000); // 1 minute = 60000
-        });
-    } catch (error) {
-        activeDownloads--;
-        console.error("Audio download error:", error);
-        return res.status(500).json({ error: "Failed to download audio" });
-    }
-});
-
-app.get("/download-video", async (req, res) => {
-    const videoId = req.query.id;
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    try {
-        // Get video title first
-        const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
-        const title = titleResponse.data.title || videoId;
-        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp4`);
-        
-        // Check if file already exists
-        if (fs.existsSync(outputPath)) {
-            return res.download(outputPath, `${cleanTitle}.mp4`);
-        }
-
-        // Check concurrent download limit
-        if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-            return res.status(429).json({ error: "Server busy. Please try again later." });
-        }
-
-        activeDownloads++;
-
-        const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-        const command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
-
-        console.log("Running video download command:", command);
-        
-        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
-        
-        activeDownloads--;
-        return res.download(outputPath, `${cleanTitle}.mp4`, (err) => {
-            if (err) {
-                console.error("Download error:", err);
-                return res.status(500).json({ error: "Download failed" });
-            }
-            
-            // Schedule cleanup after 1 week
-            setTimeout(() => {
-                try {
-                    fs.unlinkSync(outputPath);
-                } catch (err) {
-                    console.error("Cleanup error:", err);
-                }
-            }, 10080000); // 1 minute = 60000
-        });
-    } catch (error) {
-        activeDownloads--;
-        console.error("Video download error:", error);
-        return res.status(500).json({ error: "Failed to download video" });
-    }
-});
-
-// SSE endpoint for progress updates
-app.get("/download-progress", (req, res) => {
-    const videoId = req.query.id;
-    let title = req.query.title || videoId;
-    const format = req.query.format || 'mp4';
+  try {
+    // Get video title first
+    const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
+    const title = titleResponse.data.title || videoId;
+    const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp3`);
     
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
-        return res.status(400).json({ error: "Invalid YouTube video ID format." });
-    }
-
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    // Clean title
-    title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format}`);
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
     // Check if file already exists
     if (fs.existsSync(outputPath)) {
-        res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-        res.end();
-        return;
+      return res.download(outputPath, `${cleanTitle}.mp3`);
     }
 
     // Check concurrent download limit
     if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-        res.write(`data: ${JSON.stringify({ error: "Server busy. Please try again later." })}\n\n`);
-        res.end();
-        return;
+      return res.status(429).json({ error: "Server busy. Please try again later." });
     }
 
     activeDownloads++;
 
-    // Build yt-dlp command based on format
-    let command;
-    if (format === 'mp3') {
-        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
-    } else {
-        // For MP4, we download the pre-merged best quality video
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+
+    console.log("Running audio download command:", command);
+    
+    await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+    
+    activeDownloads--;
+    return res.download(outputPath, `${cleanTitle}.mp3`, (err) => {
+      if (err) {
+        console.error("Download error:", err);
+        return res.status(500).json({ error: "Download failed" });
+      }
+      
+      // Schedule cleanup after 1 week
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(outputPath);
+        } catch (err) {
+          console.error("Cleanup error:", err);
+        }
+      }, 10080000); // 1 minute = 60000
+    });
+  } catch (error) {
+    activeDownloads--;
+    console.error("Audio download error:", error);
+    return res.status(500).json({ error: "Failed to download audio" });
+  }
+});
+
+app.get("/download-video", async (req, res) => {
+  const videoId = req.query.id;
+  if (!videoId) {
+    return res.status(400).json({ error: "Video ID is required." });
+  }
+
+  try {
+    // Get video title first
+    const titleResponse = await axios.get(`http://localhost:${PORT}/get-title?id=${videoId}`);
+    const title = titleResponse.data.title || videoId;
+    const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp4`);
+    
+    // Check if file already exists
+    if (fs.existsSync(outputPath)) {
+      return res.download(outputPath, `${cleanTitle}.mp4`);
     }
 
-    console.log("Running download command:", command);
+    // Check concurrent download limit
+    if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+      return res.status(429).json({ error: "Server busy. Please try again later." });
+    }
+
+    activeDownloads++;
+
+    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+
+    console.log("Running video download command:", command);
     
-    const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
-
-    // Progress tracking
-    let progress = 0;
-    child.stderr.on('data', (data) => {
-        const progressMatch = data.match(/\[download\]\s+(\d+\.\d+)%/);
-        if (progressMatch) {
-            progress = parseFloat(progressMatch[1]);
-            res.write(`data: ${JSON.stringify({ progress })}\n\n`);
+    await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+    
+    activeDownloads--;
+    return res.download(outputPath, `${cleanTitle}.mp4`, (err) => {
+      if (err) {
+        console.error("Download error:", err);
+        return res.status(500).json({ error: "Download failed" });
+      }
+      
+      // Schedule cleanup after 1 week
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(outputPath);
+        } catch (err) {
+          console.error("Cleanup error:", err);
         }
+      }, 10080000); // 1 minute = 60000
     });
+  } catch (error) {
+    activeDownloads--;
+    console.error("Video download error:", error);
+    return res.status(500).json({ error: "Failed to download video" });
+  }
+});
 
-    child.on('close', (code) => {
-        activeDownloads--;
-        if (code === 0) {
-            res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-        } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
-            try {
-                if (fs.existsSync(outputPath)) {
-                    fs.unlinkSync(outputPath);
-                }
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
+// SSE endpoint for progress updates
+app.get("/download-progress", (req, res) => {
+  const videoId = req.query.id;
+  let title = req.query.title || videoId;
+  const format = req.query.format || 'mp4';
+
+  if (!videoId) {
+    return res.status(400).json({ error: "Video ID is required." });
+  }
+
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    return res.status(400).json({ error: "Invalid YouTube video ID format." });
+  }
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // Clean title
+  title = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+  const outputPath = path.join(DOWNLOAD_FOLDER, `${title}.${format}`);
+  const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Check if file already exists
+  if (fs.existsSync(outputPath)) {
+    res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+    res.end();
+    return;
+  }
+
+  // Check concurrent download limit
+  if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
+    res.write(`data: ${JSON.stringify({ error: "Server busy. Please try again later." })}\n\n`);
+    res.end();
+    return;
+  }
+
+  activeDownloads++;
+
+  // Build yt-dlp command based on format
+  let command;
+  if (format === 'mp3') {
+    command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+  } else {
+    // For MP4, we download the pre-merged best quality video
+    command = `${ytDlpPath} --cookies ${cookiePath} -f "best" --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+  }
+
+  console.log("Running download command:", command);
+
+  const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
+
+  // Progress tracking
+  let progress = 0;
+  child.stderr.on('data', (data) => {
+    const progressMatch = data.match(/\[download\]\s+(\d+\.\d+)%/);
+    if (progressMatch) {
+      progress = parseFloat(progressMatch[1]);
+      // Also send download speed if available
+      const speedMatch = data.match(/\[download\]\s+([\d.]+[KM]iB)\/s/);
+      const speed = speedMatch ? speedMatch[1] : null;
+      res.write(`data: ${JSON.stringify({ progress, speed })}\n\n`);
+    }
+    
+    // Send ETA if available
+    const etaMatch = data.match(/ETA (\d+:\d+)/);
+    if (etaMatch) {
+      res.write(`data: ${JSON.stringify({ eta: etaMatch[1] })}\n\n`);
+    }
+  });
+
+  child.on('close', (code) => {
+    activeDownloads--;
+    if (code === 0) {
+      res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+    } else {
+      res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
+      try {
+        if (fs.existsSync(outputPath)) {
+          fs.unlinkSync(outputPath);
         }
-        res.end();
-    });
+      } catch (err) {
+        console.error("Cleanup error:", err);
+      }
+    }
+    res.end();
+  });
 });
 
 // File download endpoint
 app.get("/download-file", (req, res) => {
-    const filePath = decodeURIComponent(req.query.path);
-    
-    if (!filePath || !fs.existsSync(filePath)) {
-        return res.status(404).send("File not found");
-    }
+  const filePath = decodeURIComponent(req.query.path);
 
-    res.download(filePath, path.basename(filePath), (err) => {
-        if (err) {
-            console.error("Download error:", err);
-            return res.status(500).send("Download failed");
-        }
-        
-        // Schedule cleanup after 1 week
-        setTimeout(() => {
-            try {
-                fs.unlinkSync(filePath);
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
-        }, 10080000); // 1 minute = 60000
-    });
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.status(404).send("File not found");
+  }
+
+  res.download(filePath, path.basename(filePath), (err) => {
+    if (err) {
+      console.error("Download error:", err);
+      return res.status(500).send("Download failed");
+    }
+    
+    // Schedule cleanup after 1 week
+    setTimeout(() => {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (err) {
+        console.error("Cleanup error:", err);
+      }
+    }, 10080000); // 1 minute = 60000
+  });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Something broke!');
+  console.error(err.stack);
+  res.status(500).send('Something broke!');
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`CPU Cores: ${CPU_COUNT}`);
-    console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`CPU Cores: ${CPU_COUNT}`);
+  console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
 });
