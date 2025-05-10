@@ -55,8 +55,7 @@ const MALICIOUS_PATTERNS = [
 const CPU_COUNT = os.cpus().length;
 
 // HTML Template (unchanged)
-const HTML_TEMPLATE = `
-<!DOCTYPE html>
+const HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -734,12 +733,36 @@ const HTML_TEMPLATE = `
         }
     </script>
 </body>
-</html>
-`;
+</html>`;
 
 // Utility function to sanitize filenames
 function sanitizeFilename(filename) {
     return filename.replace(/[^a-zA-Z0-9-_\.]/g, '_').substring(0, 100);
+}
+
+// Improved yt-dlp execution with better error handling
+async function executeYtDlp(command) {
+    return new Promise((resolve, reject) => {
+        const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
+        let errorOutput = '';
+
+        child.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+            console.error('[yt-dlp error]', data.toString());
+        });
+
+        child.on('close', (code) => {
+            if (code === 0) {
+                resolve();
+            } else {
+                reject(new Error(`yt-dlp exited with code ${code}. Error: ${errorOutput}`));
+            }
+        });
+
+        child.on('error', (err) => {
+            reject(err);
+        });
+    });
 }
 
 // Routes
@@ -844,11 +867,11 @@ app.get("/download-audio", async (req, res) => {
         activeDownloads++;
 
         const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let command = `${ytDlpPath} --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        let command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running audio download command:", command);
         
-        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        await executeYtDlp(command);
         
         activeDownloads--;
         return res.download(outputPath, `${cleanTitle}.mp3`, (err) => {
@@ -869,7 +892,7 @@ app.get("/download-audio", async (req, res) => {
     } catch (error) {
         activeDownloads--;
         console.error("Audio download error:", error);
-        return res.status(500).json({ error: "Failed to download audio: " + error.message });
+        return res.status(500).json({ error: `Failed to download audio: ${error.message}` });
     }
 });
 
@@ -905,11 +928,11 @@ app.get("/download-video", async (req, res) => {
             format = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
         
-        const command = `${ytDlpPath} --cookies ${cookiePath} -f "${format}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -f "${format}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running video download command:", command);
         
-        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        await executeYtDlp(command);
         
         activeDownloads--;
         return res.download(outputPath, `${cleanTitle}.mp4`, (err) => {
@@ -930,7 +953,7 @@ app.get("/download-video", async (req, res) => {
     } catch (error) {
         activeDownloads--;
         console.error("Video download error:", error);
-        return res.status(500).json({ error: "Failed to download video: " + error.message });
+        return res.status(500).json({ error: `Failed to download video: ${error.message}` });
     }
 });
 
@@ -976,14 +999,14 @@ app.get("/download-progress", (req, res) => {
     let command;
     if (format === 'mp3') {
         const audioQuality = quality === 'best' ? '0' : '5'; // 0 = best, 5 = medium quality
-        command = `${ytDlpPath} --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     } else {
         // For MP4, we download based on selected quality
         let formatString = "best";
         if (quality !== "best") {
             formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
@@ -992,8 +1015,11 @@ app.get("/download-progress", (req, res) => {
 
     // Progress tracking
     let progress = 0;
+    let errorOutput = '';
+    
     child.stderr.on('data', (data) => {
-        const progressMatch = data.match(/\[download\]\s+(\d+\.?\d*)%/);
+        errorOutput += data.toString();
+        const progressMatch = data.toString().match(/\[download\]\s+(\d+\.?\d*)%/);
         if (progressMatch) {
             progress = parseFloat(progressMatch[1]);
             res.write(`data: ${JSON.stringify({ progress })}\n\n`);
@@ -1005,7 +1031,9 @@ app.get("/download-progress", (req, res) => {
         if (code === 0) {
             res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
         } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again. (Code: " + code + ")" })}\n\n`);
+            const errorMessage = `Download failed (Code: ${code}). ${errorOutput}`;
+            console.error("Download failed:", errorMessage);
+            res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
             try {
                 if (fs.existsSync(outputPath)) {
                     fs.unlinkSync(outputPath);
@@ -1020,7 +1048,7 @@ app.get("/download-progress", (req, res) => {
     child.on('error', (err) => {
         activeDownloads--;
         console.error("Child process error:", err);
-        res.write(`data: ${JSON.stringify({ error: "Download process failed to start." })}\n\n`);
+        res.write(`data: ${JSON.stringify({ error: `Download process failed to start: ${err.message}` })}\n\n`);
         res.end();
     });
 });
@@ -1061,4 +1089,5 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`CPU Cores: ${CPU_COUNT}`);
     console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
+    console.log(`YT-DLP Path: ${ytDlpPath}`);
 });
