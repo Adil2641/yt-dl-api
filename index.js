@@ -34,7 +34,7 @@ app.use(express.static('public'));
 const titleCache = new Map();
 let activeDownloads = 0;
 
-// Security patterns (unchanged as requested)
+// Security patterns
 const MALICIOUS_PATTERNS = [
     /https?:\/\/link\/download\?id=/i,
     /javascript:/i,
@@ -55,7 +55,8 @@ const MALICIOUS_PATTERNS = [
 const CPU_COUNT = os.cpus().length;
 
 // HTML Template (unchanged)
-const HTML_TEMPLATE = `<!DOCTYPE html>
+const HTML_TEMPLATE = `
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -733,7 +734,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         }
     </script>
 </body>
-</html>`;
+</html>
+`;
 
 // Utility function to sanitize filenames
 function sanitizeFilename(filename) {
@@ -746,6 +748,12 @@ async function executeYtDlp(command, maxRetries = 3) {
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
+            // First update yt-dlp to ensure we have the latest version
+            if (attempt === 1) {
+                console.log("Updating yt-dlp...");
+                await execPromise(`${ytDlpPath} --update`);
+            }
+
             return await new Promise((resolve, reject) => {
                 const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
                 let errorOutput = '';
@@ -885,7 +893,7 @@ app.get("/download-audio", async (req, res) => {
         activeDownloads++;
 
         const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
+        let command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} --extractor-args youtube:player_client=web --throttled-rate 100K --retries 10 --fragment-retries 10 --buffer-size 16K -x --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running audio download command:", command);
         
@@ -946,7 +954,7 @@ app.get("/download-video", async (req, res) => {
             format = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
         
-        const command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -f "${format}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
+        const command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} --extractor-args youtube:player_client=web --throttled-rate 100K --retries 10 --fragment-retries 10 --buffer-size 16K -f "${format}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running video download command:", command);
         
@@ -1017,14 +1025,14 @@ app.get("/download-progress", (req, res) => {
     let command;
     if (format === 'mp3') {
         const audioQuality = quality === 'best' ? '0' : '5'; // 0 = best, 5 = medium quality
-        command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} --extractor-args youtube:player_client=web --throttled-rate 100K --retries 10 --fragment-retries 10 --buffer-size 16K -x --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     } else {
         // For MP4, we download based on selected quality
         let formatString = "best";
         if (quality !== "best") {
             formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
-        command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} --extractor-args youtube:player_client=web --throttled-rate 100K --retries 10 --fragment-retries 10 --buffer-size 16K -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
@@ -1103,7 +1111,18 @@ app.use((err, req, res, next) => {
     res.status(500).send('Something broke!');
 });
 
-app.listen(PORT, () => {
+// Verify and update yt-dlp on startup
+async function initializeYtDlp() {
+    try {
+        console.log("Checking yt-dlp version...");
+        await execPromise(`${ytDlpPath} --update`);
+        console.log("yt-dlp is up to date");
+    } catch (error) {
+        console.error("Failed to update yt-dlp:", error);
+    }
+}
+
+app.listen(PORT, async () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`CPU Cores: ${CPU_COUNT}`);
     console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
@@ -1117,4 +1136,7 @@ app.listen(PORT, () => {
             console.log("YT-DLP is executable");
         }
     });
+
+    // Initialize yt-dlp
+    await initializeYtDlp();
 });
