@@ -740,29 +740,47 @@ function sanitizeFilename(filename) {
     return filename.replace(/[^a-zA-Z0-9-_\.]/g, '_').substring(0, 100);
 }
 
-// Improved yt-dlp execution with better error handling
-async function executeYtDlp(command) {
-    return new Promise((resolve, reject) => {
-        const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
-        let errorOutput = '';
+// Improved yt-dlp execution with retries and better error handling
+async function executeYtDlp(command, maxRetries = 3) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await new Promise((resolve, reject) => {
+                const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
+                let errorOutput = '';
 
-        child.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-            console.error('[yt-dlp error]', data.toString());
-        });
+                child.stderr.on('data', (data) => {
+                    errorOutput += data.toString();
+                    console.error(`[yt-dlp attempt ${attempt}]`, data.toString());
+                });
 
-        child.on('close', (code) => {
-            if (code === 0) {
-                resolve();
-            } else {
-                reject(new Error(`yt-dlp exited with code ${code}. Error: ${errorOutput}`));
+                child.on('close', (code) => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        reject(new Error(`yt-dlp exited with code ${code}. Error: ${errorOutput}`));
+                    }
+                });
+
+                child.on('error', (err) => {
+                    reject(err);
+                });
+            });
+        } catch (error) {
+            lastError = error;
+            console.error(`Attempt ${attempt} failed:`, error.message);
+            
+            // Exponential backoff
+            if (attempt < maxRetries) {
+                const delay = Math.pow(2, attempt) * 1000;
+                console.log(`Waiting ${delay}ms before retry...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
             }
-        });
-
-        child.on('error', (err) => {
-            reject(err);
-        });
-    });
+        }
+    }
+    
+    throw lastError;
 }
 
 // Routes
@@ -867,7 +885,7 @@ app.get("/download-audio", async (req, res) => {
         activeDownloads++;
 
         const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        let command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running audio download command:", command);
         
@@ -928,7 +946,7 @@ app.get("/download-video", async (req, res) => {
             format = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
         
-        const command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -f "${format}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -f "${format}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running video download command:", command);
         
@@ -999,14 +1017,14 @@ app.get("/download-progress", (req, res) => {
     let command;
     if (format === 'mp3') {
         const audioQuality = quality === 'best' ? '0' : '5'; // 0 = best, 5 = medium quality
-        command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
     } else {
         // For MP4, we download based on selected quality
         let formatString = "best";
         if (quality !== "best") {
             formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
-        command = `${ytDlpPath} --no-warnings --ignore-errors --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --no-warnings --ignore-errors --force-ipv4 --socket-timeout 30 --source-address 0.0.0.0 --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M --retries 10 --fragment-retries 10 --buffer-size 16K --extractor-args youtube:player_client=android --throttled-rate 100K -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
@@ -1090,4 +1108,13 @@ app.listen(PORT, () => {
     console.log(`CPU Cores: ${CPU_COUNT}`);
     console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
     console.log(`YT-DLP Path: ${ytDlpPath}`);
+    
+    // Verify yt-dlp is executable
+    fs.access(ytDlpPath, fs.constants.X_OK, (err) => {
+        if (err) {
+            console.error("YT-DLP is not executable. Please run: chmod +x bin/yt-dlp");
+        } else {
+            console.log("YT-DLP is executable");
+        }
+    });
 });
