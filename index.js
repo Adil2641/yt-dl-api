@@ -34,27 +34,7 @@ app.use(express.static('public'));
 const titleCache = new Map();
 let activeDownloads = 0;
 
-// Security patterns
-const MALICIOUS_PATTERNS = [
-    /https?:\/\/link\/download\?id=/i,
-    /javascript:/i,
-    /data:/i,
-    /vbscript:/i,
-    /eval\(/i,
-    /document\./i,
-    /window\./i,
-    /\.php\?/i,
-    /\.asp\?/i,
-    /\.exe$/i,
-    /\.bat$/i,
-    /\.cmd$/i,
-    /\.dll$/i
-];
-
-// Get CPU count for optimal parallel downloads
-const CPU_COUNT = os.cpus().length;
-
-// HTML Template with all fixes
+// HTML Template remains exactly the same as provided
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
@@ -812,7 +792,7 @@ app.get("/get-info", async (req, res) => {
     }
 });
 
-// Download endpoints with quality support
+// Enhanced download endpoints with better error handling
 app.get("/download-audio", async (req, res) => {
     const { id, quality } = req.query;
     if (!id) {
@@ -843,7 +823,9 @@ app.get("/download-audio", async (req, res) => {
 
         console.log("Running audio download command:", command);
         
-        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        const { stdout, stderr } = await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        console.log("Audio download stdout:", stdout);
+        console.error("Audio download stderr:", stderr);
         
         activeDownloads--;
         return res.download(outputPath, `${cleanTitle}.mp3`, (err) => {
@@ -864,7 +846,15 @@ app.get("/download-audio", async (req, res) => {
     } catch (error) {
         activeDownloads--;
         console.error("Audio download error:", error);
-        return res.status(500).json({ error: "Failed to download audio" });
+        console.error("Error details:", {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,
+            signal: error.signal,
+            stdout: error.stdout,
+            stderr: error.stderr
+        });
+        return res.status(500).json({ error: "Failed to download audio: " + error.message });
     }
 });
 
@@ -904,7 +894,9 @@ app.get("/download-video", async (req, res) => {
 
         console.log("Running video download command:", command);
         
-        await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        const { stdout, stderr } = await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
+        console.log("Video download stdout:", stdout);
+        console.error("Video download stderr:", stderr);
         
         activeDownloads--;
         return res.download(outputPath, `${cleanTitle}.mp4`, (err) => {
@@ -925,11 +917,19 @@ app.get("/download-video", async (req, res) => {
     } catch (error) {
         activeDownloads--;
         console.error("Video download error:", error);
-        return res.status(500).json({ error: "Failed to download video" });
+        console.error("Error details:", {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,
+            signal: error.signal,
+            stdout: error.stdout,
+            stderr: error.stderr
+        });
+        return res.status(500).json({ error: "Failed to download video: " + error.message });
     }
 });
 
-// SSE endpoint for progress updates with quality support
+// Enhanced SSE endpoint with better error handling
 app.get("/download-progress", (req, res) => {
     const { id, title, format, quality } = req.query;
     
@@ -988,19 +988,34 @@ app.get("/download-progress", (req, res) => {
     // Progress tracking
     let progress = 0;
     child.stderr.on('data', (data) => {
-        const progressMatch = data.match(/\[download\]\s+(\d+\.\d+)%/);
+        console.log("yt-dlp stderr:", data.toString());
+        const progressMatch = data.toString().match(/\[download\]\s+(\d+\.\d+)%/);
         if (progressMatch) {
             progress = parseFloat(progressMatch[1]);
             res.write(`data: ${JSON.stringify({ progress })}\n\n`);
         }
     });
 
-    child.on('close', (code) => {
+    child.stdout.on('data', (data) => {
+        console.log("yt-dlp stdout:", data.toString());
+    });
+
+    child.on('error', (error) => {
+        console.error("Child process error:", error);
         activeDownloads--;
+        res.write(`data: ${JSON.stringify({ error: `Download error: ${error.message}` })}\n\n`);
+        res.end();
+    });
+
+    child.on('close', (code, signal) => {
+        activeDownloads--;
+        console.log(`Child process closed with code ${code} and signal ${signal}`);
         if (code === 0) {
             res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
         } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
+            const errorMsg = `Download failed with code ${code}. Please try again.`;
+            console.error(errorMsg);
+            res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
             try {
                 if (fs.existsSync(outputPath)) {
                     fs.unlinkSync(outputPath);
@@ -1046,6 +1061,8 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log(`CPU Cores: ${CPU_COUNT}`);
+    console.log(`CPU Cores: ${os.cpus().length}`);
     console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
+    console.log(`Download folder: ${DOWNLOAD_FOLDER}`);
+    console.log(`YT-DLP path: ${ytDlpPath}`);
 });
