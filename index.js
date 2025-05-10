@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 
 // Configuration
 const DOWNLOAD_FOLDER = path.join(__dirname, "downloads");
-const ytDlpPath = path.join(__dirname, "bin", "yt-dlp");
+const ytDlpPath = path.join(__dirname, "bin", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
 const cookiePath = path.join(__dirname, "cookies.txt");
 const MAX_CONCURRENT_DOWNLOADS = 3;
 const DOWNLOAD_TIMEOUT = 300000; // 5 minutes
@@ -34,7 +34,7 @@ app.use(express.static('public'));
 const titleCache = new Map();
 let activeDownloads = 0;
 
-// Security patterns
+// Security patterns (unchanged as requested)
 const MALICIOUS_PATTERNS = [
     /https?:\/\/link\/download\?id=/i,
     /javascript:/i,
@@ -54,7 +54,7 @@ const MALICIOUS_PATTERNS = [
 // Get CPU count for optimal parallel downloads
 const CPU_COUNT = os.cpus().length;
 
-// HTML Template with all fixes
+// HTML Template (unchanged)
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
@@ -737,6 +737,11 @@ const HTML_TEMPLATE = `
 </html>
 `;
 
+// Utility function to sanitize filenames
+function sanitizeFilename(filename) {
+    return filename.replace(/[^a-zA-Z0-9-_\.]/g, '_').substring(0, 100);
+}
+
 // Routes
 app.get("/", (req, res) => {
     res.send(HTML_TEMPLATE);
@@ -823,7 +828,7 @@ app.get("/download-audio", async (req, res) => {
         // Get video info first
         const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
         const title = infoResponse.data.title || id;
-        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+        const cleanTitle = sanitizeFilename(title);
         const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp3`);
         
         // Check if file already exists
@@ -839,7 +844,7 @@ app.get("/download-audio", async (req, res) => {
         activeDownloads++;
 
         const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        let command = `${ytDlpPath} --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running audio download command:", command);
         
@@ -864,7 +869,7 @@ app.get("/download-audio", async (req, res) => {
     } catch (error) {
         activeDownloads--;
         console.error("Audio download error:", error);
-        return res.status(500).json({ error: "Failed to download audio" });
+        return res.status(500).json({ error: "Failed to download audio: " + error.message });
     }
 });
 
@@ -878,7 +883,7 @@ app.get("/download-video", async (req, res) => {
         // Get video info first
         const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
         const title = infoResponse.data.title || id;
-        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+        const cleanTitle = sanitizeFilename(title);
         const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp4`);
         
         // Check if file already exists
@@ -900,7 +905,7 @@ app.get("/download-video", async (req, res) => {
             format = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
         
-        const command = `${ytDlpPath} --cookies ${cookiePath} -f "${format}" --no-playlist --merge-output-format mp4 --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const command = `${ytDlpPath} --cookies ${cookiePath} -f "${format}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running video download command:", command);
         
@@ -925,7 +930,7 @@ app.get("/download-video", async (req, res) => {
     } catch (error) {
         activeDownloads--;
         console.error("Video download error:", error);
-        return res.status(500).json({ error: "Failed to download video" });
+        return res.status(500).json({ error: "Failed to download video: " + error.message });
     }
 });
 
@@ -947,7 +952,7 @@ app.get("/download-progress", (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     // Clean title
-    const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    const cleanTitle = sanitizeFilename(title || id);
     const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
     const videoUrl = `https://www.youtube.com/watch?v=${id}`;
 
@@ -971,7 +976,7 @@ app.get("/download-progress", (req, res) => {
     let command;
     if (format === 'mp3') {
         const audioQuality = quality === 'best' ? '0' : '5'; // 0 = best, 5 = medium quality
-        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --cookies ${cookiePath} -x --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     } else {
         // For MP4, we download based on selected quality
         let formatString = "best";
@@ -988,7 +993,7 @@ app.get("/download-progress", (req, res) => {
     // Progress tracking
     let progress = 0;
     child.stderr.on('data', (data) => {
-        const progressMatch = data.match(/\[download\]\s+(\d+\.\d+)%/);
+        const progressMatch = data.match(/\[download\]\s+(\d+\.?\d*)%/);
         if (progressMatch) {
             progress = parseFloat(progressMatch[1]);
             res.write(`data: ${JSON.stringify({ progress })}\n\n`);
@@ -1000,7 +1005,7 @@ app.get("/download-progress", (req, res) => {
         if (code === 0) {
             res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
         } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again." })}\n\n`);
+            res.write(`data: ${JSON.stringify({ error: "Download failed. Please try again. (Code: " + code + ")" })}\n\n`);
             try {
                 if (fs.existsSync(outputPath)) {
                     fs.unlinkSync(outputPath);
@@ -1009,6 +1014,13 @@ app.get("/download-progress", (req, res) => {
                 console.error("Cleanup error:", err);
             }
         }
+        res.end();
+    });
+
+    child.on('error', (err) => {
+        activeDownloads--;
+        console.error("Child process error:", err);
+        res.write(`data: ${JSON.stringify({ error: "Download process failed to start." })}\n\n`);
         res.end();
     });
 });
@@ -1021,7 +1033,8 @@ app.get("/download-file", (req, res) => {
         return res.status(404).send("File not found");
     }
 
-    res.download(filePath, path.basename(filePath), (err) => {
+    const fileName = path.basename(filePath);
+    res.download(filePath, fileName, (err) => {
         if (err) {
             console.error("Download error:", err);
             return res.status(500).send("Download failed");
