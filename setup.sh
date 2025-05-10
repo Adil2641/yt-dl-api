@@ -7,5 +7,5 @@ mkdir -p bin
 apt-get update && apt-get install -y ffmpeg
 
 # Download yt-dlp into bin folder
-wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O bin/yt-dlp
-chmod +x bin/yt-dl
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o bin/yt-dlp
+chmod a+rx bin/yt-dlp
