@@ -16,6 +16,7 @@ const cookiePath = path.join(__dirname, "cookies.txt");
 const MAX_CONCURRENT_DOWNLOADS = 3;
 const DOWNLOAD_TIMEOUT = 300000; // 5 minutes
 const TITLE_CACHE_TTL = 10080000; // 1 week
+const CPU_COUNT = os.cpus().length; // Define CPU_COUNT here
 
 // Convert exec to promise-based
 const execPromise = util.promisify(exec);
@@ -792,7 +793,6 @@ app.get("/get-info", async (req, res) => {
     }
 });
 
-// Enhanced download endpoints with better error handling
 app.get("/download-audio", async (req, res) => {
     const { id, quality } = req.query;
     if (!id) {
@@ -929,7 +929,6 @@ app.get("/download-video", async (req, res) => {
     }
 });
 
-// Enhanced SSE endpoint with better error handling
 app.get("/download-progress", (req, res) => {
     const { id, title, format, quality } = req.query;
     
@@ -1028,7 +1027,6 @@ app.get("/download-progress", (req, res) => {
     });
 });
 
-// File download endpoint
 app.get("/download-file", (req, res) => {
     const filePath = decodeURIComponent(req.query.path);
     
@@ -1061,7 +1059,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-    console.log(`CPU Cores: ${os.cpus().length}`);
+    console.log(`CPU Cores: ${CPU_COUNT}`);
     console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
     console.log(`Download folder: ${DOWNLOAD_FOLDER}`);
     console.log(`YT-DLP path: ${ytDlpPath}`);
