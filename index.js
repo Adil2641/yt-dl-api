@@ -9,18 +9,18 @@ const os = require('os');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enhanced Configuration with fallbacks
+// Enhanced Configuration with Environment Variables
 const config = {
   DOWNLOAD_FOLDER: path.join(__dirname, 'downloads'),
   YT_DLP_PATH: path.join(__dirname, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'),
-  COOKIE_PATH: fs.existsSync(path.join(__dirname, 'cookies.txt')) ? path.join(__dirname, 'cookies.txt') : null,
+  COOKIE_PATH: process.env.COOKIE_PATH || path.join(__dirname, 'cookies.txt'),
   MAX_CONCURRENT_DOWNLOADS: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS) || 3,
-  DOWNLOAD_TIMEOUT: parseInt(process.env.DOWNLOAD_TIMEOUT) || 300000, // 5 minutes
-  TITLE_CACHE_TTL: parseInt(process.env.TITLE_CACHE_TTL) || 604800000, // 1 week
+  DOWNLOAD_TIMEOUT: parseInt(process.env.DOWNLOAD_TIMEOUT) || 300000,
+  TITLE_CACHE_TTL: parseInt(process.env.TITLE_CACHE_TTL) || 604800000,
   CPU_COUNT: parseInt(process.env.CPU_COUNT) || os.cpus().length,
   RATE_LIMIT: process.env.RATE_LIMIT || '2M',
   RETRY_ATTEMPTS: parseInt(process.env.RETRY_ATTEMPTS) || 2,
-  RETRY_DELAY: parseInt(process.env.RETRY_DELAY) || 5000 // 5 seconds
+  RETRY_DELAY: parseInt(process.env.RETRY_DELAY) || 5000
 };
 
 // Validate and create downloads directory
@@ -34,18 +34,18 @@ if (!fs.existsSync(config.DOWNLOAD_FOLDER)) {
   }
 }
 
-// Enhanced logging with file rotation capability
+// Enhanced logging with file output
 const logger = {
   info: (...args) => {
     const message = `[INFO] ${new Date().toISOString()} ${args.join(' ')}\n`;
     console.log(message.trim());
-    fs.appendFileSync('server.log', message);
+    fs.appendFileSync('app.log', message);
   },
   error: (...args) => {
     const message = `[ERROR] ${new Date().toISOString()} ${args.join(' ')}\n`;
     console.error(message.trim());
-    fs.appendFileSync('server.log', message);
-    fs.appendFileSync('error.log', message);
+    fs.appendFileSync('app.log', message);
+    fs.appendFileSync('errors.log', message);
   },
   debug: (...args) => {
     if (process.env.DEBUG) {
@@ -56,13 +56,13 @@ const logger = {
   }
 };
 
-// Verify yt-dlp exists and is executable
+// Verify yt-dlp exists
 if (!fs.existsSync(config.YT_DLP_PATH)) {
   logger.error('yt-dlp not found at:', config.YT_DLP_PATH);
   process.exit(1);
 }
 
-// Promisified exec with timeout and retry capability
+// Promisified exec with retry capability
 const execWithRetry = async (command, attempts = config.RETRY_ATTEMPTS) => {
   let lastError;
   
@@ -89,7 +89,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Enhanced video info cache with periodic cleanup
+// Video info cache with periodic cleanup
 const videoInfoCache = new Map();
 setInterval(() => {
   const now = Date.now();
@@ -98,11 +98,11 @@ setInterval(() => {
       videoInfoCache.delete(key);
     }
   }
-}, 3600000); // Cleanup every hour
+}, 3600000);
 
 let activeDownloads = 0;
 
-// HTML Template (simplified for brevity)
+// HTML Template
 const HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -788,7 +788,6 @@ app.get('/', (req, res) => {
   res.send(HTML_TEMPLATE);
 });
 
-// Enhanced video info endpoint with multiple fallback sources
 app.get('/get-info', async (req, res) => {
   try {
     const videoId = req.query.id;
@@ -796,7 +795,6 @@ app.get('/get-info', async (req, res) => {
       return res.status(400).json({ error: 'Invalid YouTube video ID' });
     }
 
-    // Cache check
     if (videoInfoCache.has(videoId)) {
       const cached = videoInfoCache.get(videoId);
       if (Date.now() - cached.timestamp < config.TITLE_CACHE_TTL) {
@@ -804,63 +802,27 @@ app.get('/get-info', async (req, res) => {
       }
     }
 
-    // Try multiple info sources
-    const sources = [
-      `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`,
-      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
-      `https://youtube.com/get_video_info?video_id=${videoId}`
-    ];
-
-    let videoInfo;
-    for (const source of sources) {
-      try {
-        const response = await axios.get(source, { timeout: 5000 });
-        if (response.data && response.data.title) {
-          videoInfo = {
-            title: response.data.title,
-            duration: response.data.duration || 0,
-            views: response.data.view_count || 0,
-            thumbnail: response.data.thumbnail_url || 
-                     `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-          };
-          break;
-        }
-      } catch (err) {
-        logger.debug(`Info source failed: ${source}`, err.message);
-      }
+    const response = await axios.get(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
+    if (response.data.title) {
+      const videoInfo = {
+        title: response.data.title,
+        duration: response.data.duration || 0,
+        views: 0,
+        thumbnail: response.data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+      };
+      videoInfoCache.set(videoId, {
+        data: videoInfo,
+        timestamp: Date.now()
+      });
+      return res.json(videoInfo);
     }
-
-    if (!videoInfo) {
-      // Final fallback - try yt-dlp to get info
-      try {
-        const command = `${config.YT_DLP_PATH} --no-warnings --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`;
-        const { stdout } = await execWithRetry(command);
-        const info = JSON.parse(stdout);
-        videoInfo = {
-          title: info.title || `Video ${videoId}`,
-          duration: info.duration || 0,
-          views: info.view_count || 0,
-          thumbnail: info.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-        };
-      } catch (err) {
-        logger.error('Failed to get video info from all sources:', err);
-        return res.status(404).json({ error: 'Video not found or unavailable' });
-      }
-    }
-
-    videoInfoCache.set(videoId, {
-      data: videoInfo,
-      timestamp: Date.now()
-    });
-    return res.json(videoInfo);
-
+    return res.status(404).json({ error: 'Video not found' });
   } catch (error) {
     logger.error('Get info error:', error);
     return res.status(500).json({ error: 'Failed to get video info' });
   }
 });
 
-// Unified download handler with enhanced recovery
 const handleDownload = async (req, res, format) => {
   const { id, quality = 'best' } = req.query;
   
@@ -869,18 +831,15 @@ const handleDownload = async (req, res, format) => {
   }
 
   try {
-    // Get video info with validation
     const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
     const title = infoResponse.data?.title || id;
     const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').substring(0, 100);
     const outputPath = path.join(config.DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
 
-    // Check existing file
     if (fs.existsSync(outputPath)) {
       return res.download(outputPath);
     }
 
-    // Check concurrent download limit
     if (activeDownloads >= config.MAX_CONCURRENT_DOWNLOADS) {
       return res.status(429).json({ error: 'Server busy. Please try again later' });
     }
@@ -893,26 +852,22 @@ const handleDownload = async (req, res, format) => {
 
     if (format === 'mp3') {
       const audioQuality = quality === 'best' ? '0' : '5';
-      command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
+      command = `${config.YT_DLP_PATH} --no-warnings ${fs.existsSync(config.COOKIE_PATH) ? `--cookies ${config.COOKIE_PATH}` : ''} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
     } else {
       const formatString = quality === 'best' ? 'best' : `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
-      command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
+      command = `${config.YT_DLP_PATH} --no-warnings ${fs.existsSync(config.COOKIE_PATH) ? `--cookies ${config.COOKIE_PATH}` : ''} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
     }
 
     logger.debug('Executing command:', command);
     const { stdout, stderr } = await execWithRetry(command);
 
-    // Verify download completed successfully
     if (!fs.existsSync(outputPath)) {
       throw new Error('Download completed but no file was created');
     }
 
     activeDownloads--;
     return res.download(outputPath, `${cleanTitle}.${format}`, (err) => {
-      if (err) {
-        logger.error('Download delivery error:', err);
-      }
-      // Schedule cleanup
+      if (err) logger.error('Download delivery error:', err);
       setTimeout(() => {
         try {
           fs.unlinkSync(outputPath);
@@ -927,11 +882,7 @@ const handleDownload = async (req, res, format) => {
     activeDownloads--;
     logger.error('Download failed:', {
       videoId: id,
-      format,
       error: error.message,
-      code: error.code,
-      signal: error.signal,
-      stdout: error.stdout,
       stderr: error.stderr
     });
 
@@ -942,22 +893,15 @@ const handleDownload = async (req, res, format) => {
       errorMessage = 'Download timed out';
     } else if (error.signal === 'SIGTERM') {
       errorMessage = 'Download was terminated';
-    } else if (error.stderr?.includes('This video is only available for registered users')) {
-      errorMessage = 'Age-restricted content requires cookies (try signing in)';
     }
 
-    return res.status(500).json({ 
-      error: errorMessage,
-      details: process.env.DEBUG ? error.message : undefined
-    });
+    return res.status(500).json({ error: errorMessage });
   }
 };
 
-// Download endpoints
 app.get('/download-audio', (req, res) => handleDownload(req, res, 'mp3'));
 app.get('/download-video', (req, res) => handleDownload(req, res, 'mp4'));
 
-// Enhanced progress endpoint with heartbeat
 app.get('/download-progress', (req, res) => {
   const { id, title, format, quality = 'best' } = req.query;
   
@@ -965,7 +909,6 @@ app.get('/download-progress', (req, res) => {
     return res.status(400).json({ error: 'Invalid YouTube video ID' });
   }
 
-  // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -977,12 +920,10 @@ app.get('/download-progress', (req, res) => {
     res.write(': heartbeat\n\n');
   }, 30000);
 
-  // Clean title
   const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').substring(0, 100);
   const outputPath = path.join(config.DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
   const videoUrl = `https://www.youtube.com/watch?v=${id}`;
 
-  // Check if file already exists
   if (fs.existsSync(outputPath)) {
     clearInterval(heartbeat);
     res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
@@ -990,7 +931,6 @@ app.get('/download-progress', (req, res) => {
     return;
   }
 
-  // Check concurrent download limit
   if (activeDownloads >= config.MAX_CONCURRENT_DOWNLOADS) {
     clearInterval(heartbeat);
     res.write(`data: ${JSON.stringify({ error: 'Server busy. Please try again later' })}\n\n`);
@@ -1001,33 +941,25 @@ app.get('/download-progress', (req, res) => {
   activeDownloads++;
   logger.info(`Starting progress tracking for ${id} (${format})`);
 
-  // Build yt-dlp command
   let command;
   if (format === 'mp3') {
     const audioQuality = quality === 'best' ? '0' : '5';
-    command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
+    command = `${config.YT_DLP_PATH} --no-warnings ${fs.existsSync(config.COOKIE_PATH) ? `--cookies ${config.COOKIE_PATH}` : ''} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
   } else {
     const formatString = quality === 'best' ? 'best' : `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
-    command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
+    command = `${config.YT_DLP_PATH} --no-warnings ${fs.existsSync(config.COOKIE_PATH) ? `--cookies ${config.COOKIE_PATH}` : ''} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
   }
 
   logger.debug('Executing progress command:', command);
   const child = exec(command, { timeout: config.DOWNLOAD_TIMEOUT });
 
-  // Progress tracking
   let progress = 0;
   child.stderr.on('data', (data) => {
     const dataStr = data.toString();
     logger.debug('yt-dlp stderr:', dataStr);
     
-    // Check for various error conditions
-    if (dataStr.includes('Video unavailable') || 
-        dataStr.includes('content isn\'t available') ||
-        dataStr.includes('This video is only available for registered users')) {
-      const errorMsg = dataStr.includes('registered users') ? 
-        'Age-restricted content requires cookies (try signing in)' :
-        'This video is unavailable (private, removed, or age-restricted)';
-      
+    if (dataStr.includes('Video unavailable') || dataStr.includes('content isn\'t available')) {
+      const errorMsg = 'This video is unavailable (private, removed, or age-restricted)';
       logger.error(errorMsg);
       clearInterval(heartbeat);
       res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
@@ -1073,8 +1005,6 @@ app.get('/download-progress', (req, res) => {
       let errorMsg = 'Download failed';
       if (signal === 'SIGTERM') {
         errorMsg = 'Download was terminated';
-      } else if (code === 1) {
-        errorMsg = 'Download failed (check if video is available)';
       }
       logger.error(errorMsg);
       res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
@@ -1090,7 +1020,6 @@ app.get('/download-progress', (req, res) => {
     res.end();
   });
 
-  // Handle client disconnect
   req.on('close', () => {
     clearInterval(heartbeat);
     if (child.exitCode === null) {
@@ -1101,7 +1030,6 @@ app.get('/download-progress', (req, res) => {
   });
 });
 
-// File download endpoint with validation
 app.get('/download-file', (req, res) => {
   try {
     const filePath = decodeURIComponent(req.query.path);
@@ -1110,11 +1038,8 @@ app.get('/download-file', (req, res) => {
       return res.status(404).send('File not found');
     }
 
-    const fileName = path.basename(filePath);
-    res.download(filePath, fileName, (err) => {
-      if (err) {
-        logger.error('Download delivery error:', err);
-      }
+    res.download(filePath, path.basename(filePath), (err) => {
+      if (err) logger.error('Download delivery error:', err);
     });
   } catch (error) {
     logger.error('File download error:', error);
@@ -1125,10 +1050,7 @@ app.get('/download-file', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Server error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    details: process.env.DEBUG ? err.message : undefined
-  });
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // Graceful shutdown
@@ -1145,15 +1067,5 @@ process.on('SIGINT', () => {
 // Startup
 app.listen(PORT, () => {
   logger.info(`Server started on port ${PORT}`);
-  logger.info('Configuration:', {
-    cpuCount: config.CPU_COUNT,
-    maxDownloads: config.MAX_CONCURRENT_DOWNLOADS,
-    downloadFolder: config.DOWNLOAD_FOLDER,
-    ytDlpPath: config.YT_DLP_PATH,
-    cookiePath: config.COOKIE_PATH,
-    rateLimit: config.RATE_LIMIT,
-    timeout: config.DOWNLOAD_TIMEOUT,
-    retryAttempts: config.RETRY_ATTEMPTS,
-    retryDelay: config.RETRY_DELAY
-  });
+  logger.info('Configuration:', config);
 });
