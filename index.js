@@ -1,43 +1,52 @@
-const express = require("express");
-const { exec } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-const axios = require("axios");
-const util = require("util");
-const os = require("os");
+const express = require('express');
+const { exec } = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const axios = require('axios');
+const util = require('util');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuration
-const DOWNLOAD_FOLDER = path.join(__dirname, "downloads");
-const ytDlpPath = path.join(__dirname, "bin", "yt-dlp");
-const cookiePath = path.join(__dirname, "cookies.txt");
-const MAX_CONCURRENT_DOWNLOADS = 3;
-const DOWNLOAD_TIMEOUT = 300000; // 5 minutes
-const TITLE_CACHE_TTL = 10080000; // 1 week
-const CPU_COUNT = os.cpus().length;
+// Enhanced Configuration
+const config = {
+  DOWNLOAD_FOLDER: path.join(__dirname, 'downloads'),
+  YT_DLP_PATH: path.join(__dirname, 'bin', 'yt-dlp'),
+  COOKIE_PATH: path.join(__dirname, 'cookies.txt'),
+  MAX_CONCURRENT_DOWNLOADS: 3,
+  DOWNLOAD_TIMEOUT: 300000, // 5 minutes
+  TITLE_CACHE_TTL: 10080000, // 1 week
+  CPU_COUNT: os.cpus().length,
+  RATE_LIMIT: '2M'
+};
 
-// Convert exec to promise-based
-const execPromise = util.promisify(exec);
-
-// Create downloads folder if it doesn't exist
-if (!fs.existsSync(DOWNLOAD_FOLDER)) {
-    fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
+// Ensure downloads directory exists
+if (!fs.existsSync(config.DOWNLOAD_FOLDER)) {
+  fs.mkdirSync(config.DOWNLOAD_FOLDER, { recursive: true });
 }
+
+// Enhanced logging system
+const logger = {
+  info: (...args) => console.log('[INFO]', new Date().toISOString(), ...args),
+  error: (...args) => console.error('[ERROR]', new Date().toISOString(), ...args),
+  debug: (...args) => process.env.DEBUG && console.debug('[DEBUG]', new Date().toISOString(), ...args)
+};
+
+// Promisified exec with enhanced error handling
+const execPromise = util.promisify(exec);
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Cache for video titles
-const titleCache = new Map();
+// Enhanced video info cache
+const videoInfoCache = new Map();
 let activeDownloads = 0;
 
-// HTML Template remains the same
-const HTML_TEMPLATE = `
-<!DOCTYPE html>
+// HTML Template
+const HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -715,334 +724,291 @@ const HTML_TEMPLATE = `
         }
     </script>
 </body>
-</html>
-`;
+</html>`;
 
 // Routes
-app.get("/", (req, res) => {
-    res.send(HTML_TEMPLATE);
+app.get('/', (req, res) => {
+  res.send(HTML_TEMPLATE);
 });
 
-app.get("/get-info", async (req, res) => {
+app.get('/get-info', async (req, res) => {
+  try {
     const videoId = req.query.id;
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required." });
+    if (!videoId) return res.status(400).json({ error: 'Video ID is required' });
+
+    // Cache check with enhanced validation
+    if (videoInfoCache.has(videoId)) {
+      const cached = videoInfoCache.get(videoId);
+      if (Date.now() - cached.timestamp < config.TITLE_CACHE_TTL) {
+        return res.json(cached.data);
+      }
     }
 
-    // Check cache first
-    if (titleCache.has(videoId)) {
-        const cached = titleCache.get(videoId);
-        if (Date.now() - cached.timestamp < TITLE_CACHE_TTL) {
-            return res.json({ 
-                title: cached.title,
-                duration: cached.duration,
-                views: cached.views,
-                thumbnail: cached.thumbnail
-            });
-        }
+    const response = await axios.get(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
+    if (response.data.title) {
+      const videoInfo = {
+        title: response.data.title,
+        duration: response.data.duration || 0,
+        views: 0,
+        thumbnail: response.data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+      };
+      videoInfoCache.set(videoId, {
+        data: videoInfo,
+        timestamp: Date.now()
+      });
+      return res.json(videoInfo);
     }
-
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    
-    try {
-        const source = axios.CancelToken.source();
-        const timeout = setTimeout(() => {
-            source.cancel('API request timed out');
-        }, 30000);
-
-        const apiResponse = await axios.get(`https://noembed.com/embed?url=${videoUrl}`, {
-            cancelToken: source.token
-        });
-        
-        clearTimeout(timeout);
-
-        if (apiResponse.data?.title) {
-            const videoInfo = {
-                title: apiResponse.data.title,
-                duration: apiResponse.data.duration || 0,
-                views: 0,
-                thumbnail: apiResponse.data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-                timestamp: Date.now()
-            };
-            
-            titleCache.set(videoId, videoInfo);
-            return res.json(videoInfo);
-        }
-        return res.status(500).json({ error: "Could not retrieve video information" });
-    } catch (error) {
-        if (axios.isCancel(error)) {
-            console.log("API request timed out");
-            return res.status(504).json({ error: "API request timed out" });
-        }
-        console.error("API Error:", error);
-        
-        // Fallback to basic info if API fails
-        try {
-            const fallbackInfo = {
-                title: `YouTube Video (${videoId})`,
-                duration: 0,
-                views: 0,
-                thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-                timestamp: Date.now()
-            };
-            titleCache.set(videoId, fallbackInfo);
-            return res.json(fallbackInfo);
-        } catch (fallbackError) {
-            return res.status(500).json({ error: "Failed to get video information" });
-        }
-    }
+    return res.status(404).json({ error: 'Video not found' });
+  } catch (error) {
+    logger.error('Get info error:', error);
+    return res.status(500).json({ error: 'Failed to get video info' });
+  }
 });
 
-// Enhanced download endpoints with better error handling
-const downloadMedia = async (req, res, format) => {
-    const { id, quality } = req.query;
-    if (!id) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
+// Enhanced download handler
+const handleDownload = async (req, res, format) => {
+  const { id, quality = 'best' } = req.query;
+  if (!id) return res.status(400).json({ error: 'Video ID is required' });
 
-    try {
-        // Get video info first
-        const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
-        const title = infoResponse.data.title || id;
-        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
-        
-        // Check if file already exists
-        if (fs.existsSync(outputPath)) {
-            return res.download(outputPath, `${cleanTitle}.${format}`);
-        }
+  try {
+    // Get video info with enhanced validation
+    const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
+    const title = infoResponse.data?.title || id;
+    const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    const outputPath = path.join(config.DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
 
-        // Check concurrent download limit
-        if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-            return res.status(429).json({ error: "Server busy. Please try again later." });
-        }
-
-        activeDownloads++;
-
-        const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let command;
-        
-        if (format === 'mp3') {
-            const audioQuality = quality === 'best' ? '0' : '5';
-            command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
-        } else {
-            let formatString = "best";
-            if (quality !== "best") {
-                formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
-            }
-            command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
-        }
-
-        console.log("Running download command:", command);
-        
-        const { stdout, stderr } = await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
-        console.log("Download stdout:", stdout);
-        console.error("Download stderr:", stderr);
-        
-        // Check if download actually failed despite process completing
-        if (!fs.existsSync(outputPath)) {
-            throw new Error("Download failed - no output file was created");
-        }
-        
-        activeDownloads--;
-        return res.download(outputPath, `${cleanTitle}.${format}`, (err) => {
-            if (err) {
-                console.error("Download error:", err);
-                return res.status(500).json({ error: "Download failed" });
-            }
-            
-            // Schedule cleanup after 1 week
-            setTimeout(() => {
-                try {
-                    fs.unlinkSync(outputPath);
-                } catch (err) {
-                    console.error("Cleanup error:", err);
-                }
-            }, 10080000);
-        });
-    } catch (error) {
-        activeDownloads--;
-        console.error("Download error:", error);
-        console.error("Error details:", {
-            message: error.message,
-            stack: error.stack,
-            code: error.code,
-            signal: error.signal,
-            stdout: error.stdout,
-            stderr: error.stderr
-        });
-        
-        let errorMessage = "Failed to download";
-        if (error.stderr && error.stderr.includes("Video unavailable")) {
-            errorMessage = "This video is unavailable (private, removed, or age-restricted)";
-        } else if (error.message.includes("timeout")) {
-            errorMessage = "Download timed out";
-        } else if (error.signal === "SIGTERM") {
-            errorMessage = "Download was terminated";
-        }
-        
-        return res.status(500).json({ error: errorMessage });
-    }
-};
-
-app.get("/download-audio", (req, res) => downloadMedia(req, res, 'mp3'));
-app.get("/download-video", (req, res) => downloadMedia(req, res, 'mp4'));
-
-app.get("/download-progress", (req, res) => {
-    const { id, title, format, quality } = req.query;
-    
-    if (!id) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    if (!/^[a-zA-Z0-9_-]{11}$/.test(id)) {
-        return res.status(400).json({ error: "Invalid YouTube video ID format." });
-    }
-
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    // Clean title
-    const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
-    const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-
-    // Check if file already exists
+    // Check existing file with enhanced validation
     if (fs.existsSync(outputPath)) {
-        res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-        res.end();
-        return;
+      return res.download(outputPath);
     }
 
-    // Check concurrent download limit
-    if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-        res.write(`data: ${JSON.stringify({ error: "Server busy. Please try again later." })}\n\n`);
-        res.end();
-        return;
+    // Concurrent download limit check
+    if (activeDownloads >= config.MAX_CONCURRENT_DOWNLOADS) {
+      return res.status(429).json({ error: 'Server busy. Try again later' });
     }
 
     activeDownloads++;
+    logger.info(`Starting download for ${id} (${format})`);
 
-    // Build yt-dlp command based on format and quality
+    const videoUrl = `https://www.youtube.com/watch?v=${id}`;
     let command;
+
     if (format === 'mp3') {
-        const audioQuality = quality === 'best' ? '0' : '5';
-        command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+      const audioQuality = quality === 'best' ? '0' : '5';
+      command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
     } else {
-        let formatString = "best";
-        if (quality !== "best") {
-            formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
-        }
-        command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+      const formatString = quality === 'best' ? 'best' : `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
+      command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
     }
 
-    console.log("Running download command:", command);
+    logger.debug('Executing command:', command);
+    const { stdout, stderr } = await execPromise(command, { timeout: config.DOWNLOAD_TIMEOUT });
+
+    if (!fs.existsSync(outputPath)) {
+      throw new Error('Download completed but no file was created');
+    }
+
+    activeDownloads--;
+    return res.download(outputPath, () => {
+      // Schedule cleanup
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(outputPath);
+          logger.info(`Cleaned up ${outputPath}`);
+        } catch (err) {
+          logger.error('Cleanup error:', err);
+        }
+      }, config.TITLE_CACHE_TTL);
+    });
+
+  } catch (error) {
+    activeDownloads--;
+    logger.error('Download failed:', {
+      error: error.message,
+      stack: error.stack,
+      code: error.code,
+      signal: error.signal,
+      stdout: error.stdout,
+      stderr: error.stderr
+    });
+
+    let errorMessage = 'Download failed';
+    if (error.stderr?.includes('Video unavailable')) {
+      errorMessage = 'Video is unavailable (private, removed, or age-restricted)';
+    } else if (error.message.includes('timeout')) {
+      errorMessage = 'Download timed out';
+    } else if (error.signal === 'SIGTERM') {
+      errorMessage = 'Download was terminated';
+    }
+
+    return res.status(500).json({ error: errorMessage });
+  }
+};
+
+// Download endpoints
+app.get('/download-audio', (req, res) => handleDownload(req, res, 'mp3'));
+app.get('/download-video', (req, res) => handleDownload(req, res, 'mp4'));
+
+// Enhanced progress endpoint
+app.get('/download-progress', (req, res) => {
+  const { id, title, format, quality = 'best' } = req.query;
+  
+  if (!id) {
+    return res.status(400).json({ error: 'Video ID is required' });
+  }
+
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(id)) {
+    return res.status(400).json({ error: 'Invalid YouTube video ID format' });
+  }
+
+  // Set SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // Clean title
+  const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+  const outputPath = path.join(config.DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
+  const videoUrl = `https://www.youtube.com/watch?v=${id}`;
+
+  // Check if file already exists
+  if (fs.existsSync(outputPath)) {
+    res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+    res.end();
+    return;
+  }
+
+  // Check concurrent download limit
+  if (activeDownloads >= config.MAX_CONCURRENT_DOWNLOADS) {
+    res.write(`data: ${JSON.stringify({ error: 'Server busy. Please try again later' })}\n\n`);
+    res.end();
+    return;
+  }
+
+  activeDownloads++;
+  logger.info(`Starting progress tracking for ${id} (${format})`);
+
+  // Build yt-dlp command
+  let command;
+  if (format === 'mp3') {
+    const audioQuality = quality === 'best' ? '0' : '5';
+    command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
+  } else {
+    const formatString = quality === 'best' ? 'best' : `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
+    command = `${config.YT_DLP_PATH} --no-warnings ${config.COOKIE_PATH ? `--cookies ${config.COOKIE_PATH}` : ''} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${config.CPU_COUNT} --limit-rate ${config.RATE_LIMIT} -o "${outputPath}" "${videoUrl}"`;
+  }
+
+  logger.debug('Executing progress command:', command);
+  const child = exec(command, { timeout: config.DOWNLOAD_TIMEOUT });
+
+  // Progress tracking
+  let progress = 0;
+  child.stderr.on('data', (data) => {
+    const dataStr = data.toString();
+    logger.debug('yt-dlp stderr:', dataStr);
     
-    const child = exec(command, { timeout: DOWNLOAD_TIMEOUT });
+    // Check for video unavailable error
+    if (dataStr.includes('Video unavailable') || dataStr.includes("content isn't available")) {
+      const errorMsg = 'This video is unavailable (private, removed, or age-restricted)';
+      logger.error(errorMsg);
+      res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
+      res.end();
+      child.kill();
+      activeDownloads--;
+      return;
+    }
 
-    // Progress tracking
-    let progress = 0;
-    child.stderr.on('data', (data) => {
-        const dataStr = data.toString();
-        console.log("yt-dlp stderr:", dataStr);
-        
-        // Check for video unavailable error
-        if (dataStr.includes("Video unavailable") || dataStr.includes("content isn't available")) {
-            const errorMsg = "This video is unavailable (private, removed, or age-restricted)";
-            console.error(errorMsg);
-            res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
-            res.end();
-            child.kill();
-            activeDownloads--;
-            return;
+    const progressMatch = dataStr.match(/\[download\]\s+(\d+\.\d+)%/);
+    if (progressMatch) {
+      progress = parseFloat(progressMatch[1]);
+      res.write(`data: ${JSON.stringify({ progress })}\n\n`);
+    }
+  });
+
+  child.stdout.on('data', (data) => {
+    logger.debug('yt-dlp stdout:', data.toString());
+  });
+
+  child.on('error', (error) => {
+    logger.error('Child process error:', error);
+    activeDownloads--;
+    res.write(`data: ${JSON.stringify({ error: `Download error: ${error.message}` })}\n\n`);
+    res.end();
+  });
+
+  child.on('close', (code, signal) => {
+    activeDownloads--;
+    logger.info(`Child process closed with code ${code} and signal ${signal}`);
+    
+    if (code === 0) {
+      if (fs.existsSync(outputPath)) {
+        res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+      } else {
+        const errorMsg = 'Download completed but no file was created';
+        logger.error(errorMsg);
+        res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
+      }
+    } else {
+      let errorMsg = `Download failed with code ${code}`;
+      if (signal === 'SIGTERM') {
+        errorMsg = 'Download was terminated';
+      }
+      logger.error(errorMsg);
+      res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
+      try {
+        if (fs.existsSync(outputPath)) {
+          fs.unlinkSync(outputPath);
         }
-
-        const progressMatch = dataStr.match(/\[download\]\s+(\d+\.\d+)%/);
-        if (progressMatch) {
-            progress = parseFloat(progressMatch[1]);
-            res.write(`data: ${JSON.stringify({ progress })}\n\n`);
-        }
-    });
-
-    child.stdout.on('data', (data) => {
-        console.log("yt-dlp stdout:", data.toString());
-    });
-
-    child.on('error', (error) => {
-        console.error("Child process error:", error);
-        activeDownloads--;
-        res.write(`data: ${JSON.stringify({ error: `Download error: ${error.message}` })}\n\n`);
-        res.end();
-    });
-
-    child.on('close', (code, signal) => {
-        activeDownloads--;
-        console.log(`Child process closed with code ${code} and signal ${signal}`);
-        
-        if (code === 0) {
-            if (fs.existsSync(outputPath)) {
-                res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-            } else {
-                const errorMsg = "Download completed but no file was created";
-                console.error(errorMsg);
-                res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
-            }
-        } else {
-            let errorMsg = `Download failed with code ${code}`;
-            if (signal === "SIGTERM") {
-                errorMsg = "Download was terminated";
-            }
-            console.error(errorMsg);
-            res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
-            try {
-                if (fs.existsSync(outputPath)) {
-                    fs.unlinkSync(outputPath);
-                }
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
-        }
-        res.end();
-    });
+      } catch (err) {
+        logger.error('Cleanup error:', err);
+      }
+    }
+    res.end();
+  });
 });
 
-app.get("/download-file", (req, res) => {
-    const filePath = decodeURIComponent(req.query.path);
-    
-    if (!filePath || !fs.existsSync(filePath)) {
-        return res.status(404).send("File not found");
-    }
+// File download endpoint
+app.get('/download-file', (req, res) => {
+  const filePath = decodeURIComponent(req.query.path);
+  
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.status(404).send('File not found');
+  }
 
-    res.download(filePath, path.basename(filePath), (err) => {
-        if (err) {
-            console.error("Download error:", err);
-            return res.status(500).send("Download failed");
-        }
-        
-        // Schedule cleanup after 1 week
-        setTimeout(() => {
-            try {
-                fs.unlinkSync(filePath);
-            } catch (err) {
-                console.error("Cleanup error:", err);
-            }
-        }, 10080000);
-    });
+  res.download(filePath, path.basename(filePath), (err) => {
+    if (err) {
+      logger.error('Download error:', err);
+      return res.status(500).send('Download failed');
+    }
+    
+    // Schedule cleanup
+    setTimeout(() => {
+      try {
+        fs.unlinkSync(filePath);
+        logger.info(`Cleaned up ${filePath}`);
+      } catch (err) {
+        logger.error('Cleanup error:', err);
+      }
+    }, config.TITLE_CACHE_TTL);
+  });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).send('Something broke!');
+  logger.error('Server error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
+// Startup
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`CPU Cores: ${CPU_COUNT}`);
-    console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
-    console.log(`Download folder: ${DOWNLOAD_FOLDER}`);
-    console.log(`YT-DLP path: ${ytDlpPath}`);
-    console.log(`Cookies path: ${cookiePath}`);
+  logger.info(`Server started on port ${PORT}`);
+  logger.info('Configuration:', {
+    cpuCount: config.CPU_COUNT,
+    maxDownloads: config.MAX_CONCURRENT_DOWNLOADS,
+    downloadFolder: config.DOWNLOAD_FOLDER,
+    ytDlpPath: config.YT_DLP_PATH,
+    cookiePath: config.COOKIE_PATH,
+    rateLimit: config.RATE_LIMIT,
+    timeout: config.DOWNLOAD_TIMEOUT
+  });
 });
