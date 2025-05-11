@@ -9,7 +9,7 @@ const os = require('os');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enhanced Configuration
+// Configuration with enhanced defaults
 const config = {
   DOWNLOAD_FOLDER: path.join(__dirname, 'downloads'),
   YT_DLP_PATH: path.join(__dirname, 'bin', 'yt-dlp'),
@@ -21,7 +21,8 @@ const config = {
   RATE_LIMIT: '2M',
   RETRY_ATTEMPTS: 2,
   RETRY_DELAY: 5000,
-  HEARTBEAT_INTERVAL: 30000
+  HEARTBEAT_INTERVAL: 30000,
+  GRACEFUL_SHUTDOWN_TIMEOUT: 5000
 };
 
 // Validate and create downloads directory
@@ -35,11 +36,26 @@ if (!fs.existsSync(config.DOWNLOAD_FOLDER)) {
   }
 }
 
-// Enhanced logging
+// Enhanced logging with file rotation
 const logger = {
-  info: (...args) => console.log(`[INFO] ${new Date().toISOString()}`, ...args),
-  error: (...args) => console.error(`[ERROR] ${new Date().toISOString()}`, ...args),
-  debug: (...args) => process.env.DEBUG && console.debug(`[DEBUG] ${new Date().toISOString()}`, ...args)
+  info: (...args) => {
+    const message = `[INFO] ${new Date().toISOString()} ${args.join(' ')}\n`;
+    console.log(message.trim());
+    fs.appendFileSync('app.log', message);
+  },
+  error: (...args) => {
+    const message = `[ERROR] ${new Date().toISOString()} ${args.join(' ')}\n`;
+    console.error(message.trim());
+    fs.appendFileSync('app.log', message);
+    fs.appendFileSync('errors.log', message);
+  },
+  debug: (...args) => {
+    if (process.env.DEBUG) {
+      const message = `[DEBUG] ${new Date().toISOString()} ${args.join(' ')}\n`;
+      console.debug(message.trim());
+      fs.appendFileSync('debug.log', message);
+    }
+  }
 };
 
 // Verify yt-dlp exists
@@ -48,7 +64,7 @@ if (!fs.existsSync(config.YT_DLP_PATH)) {
   process.exit(1);
 }
 
-// Promisified exec with retry
+// Promisified exec with retry and enhanced timeout handling
 const execWithRetry = async (command, attempts = config.RETRY_ATTEMPTS) => {
   let lastError;
   for (let i = 0; i < attempts; i++) {
@@ -73,9 +89,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Video info cache
+// Video info cache with periodic cleanup
 const videoInfoCache = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of videoInfoCache.entries()) {
+    if (now - value.timestamp > config.TITLE_CACHE_TTL) {
+      videoInfoCache.delete(key);
+    }
+  }
+}, 3600000); // Cleanup every hour
+
 let activeDownloads = 0;
+const activeProcesses = new Set();
 
 // HTML Template
 const HTML_TEMPLATE = `<!DOCTYPE html>
@@ -865,34 +891,42 @@ const handleDownload = async (req, res, format) => {
 app.get('/download-audio', (req, res) => handleDownload(req, res, 'mp3'));
 app.get('/download-video', (req, res) => handleDownload(req, res, 'mp4'));
 
-// Enhanced progress endpoint
+// Enhanced progress endpoint with client disconnect handling
 app.get('/download-progress', (req, res) => {
   const { id, title, format, quality = 'best' } = req.query;
   
-  if (!id) return res.status(400).json({ error: 'Video ID required' });
+  if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id)) {
+    return res.status(400).json({ error: 'Invalid YouTube video ID' });
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
-  // Heartbeat
-  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), config.HEARTBEAT_INTERVAL);
+  // Heartbeat to keep connection alive
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, config.HEARTBEAT_INTERVAL);
 
   const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
   const outputPath = path.join(config.DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
   const videoUrl = `https://www.youtube.com/watch?v=${id}`;
 
+  // Check if file already exists
   if (fs.existsSync(outputPath)) {
     clearInterval(heartbeat);
     res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
-    return res.end();
+    res.end();
+    return;
   }
 
+  // Check concurrent download limit
   if (activeDownloads >= config.MAX_CONCURRENT_DOWNLOADS) {
     clearInterval(heartbeat);
-    res.write(`data: ${JSON.stringify({ error: 'Server busy' })}\n\n`);
-    return res.end();
+    res.write(`data: ${JSON.stringify({ error: 'Server busy. Please try again later' })}\n\n`);
+    res.end();
+    return;
   }
 
   activeDownloads++;
@@ -908,7 +942,9 @@ app.get('/download-progress', (req, res) => {
   }
 
   const child = exec(command, { timeout: config.DOWNLOAD_TIMEOUT });
+  activeProcesses.add(child);
 
+  // Progress tracking
   child.stderr.on('data', (data) => {
     const dataStr = data.toString();
     
@@ -917,7 +953,9 @@ app.get('/download-progress', (req, res) => {
       res.write(`data: ${JSON.stringify({ error: 'Video unavailable' })}\n\n`);
       child.kill();
       activeDownloads--;
-      return res.end();
+      activeProcesses.delete(child);
+      res.end();
+      return;
     }
 
     const progressMatch = dataStr.match(/\[download\]\s+(\d+\.\d+)%/);
@@ -929,6 +967,7 @@ app.get('/download-progress', (req, res) => {
   child.on('close', (code, signal) => {
     clearInterval(heartbeat);
     activeDownloads--;
+    activeProcesses.delete(child);
 
     if (code === 0 && fs.existsSync(outputPath)) {
       res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
@@ -939,12 +978,14 @@ app.get('/download-progress', (req, res) => {
     res.end();
   });
 
+  // Handle client disconnect
   req.on('close', () => {
     clearInterval(heartbeat);
     if (child.exitCode === null) {
       child.kill();
       activeDownloads--;
-      logger.info('Client disconnected');
+      activeProcesses.delete(child);
+      logger.info('Client disconnected during download');
     }
   });
 });
@@ -957,27 +998,44 @@ app.get('/download-file', (req, res) => {
   res.download(filePath);
 });
 
-// Error handling
+// Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  logger.info('Shutting down gracefully...');
+// Graceful shutdown handler
+const gracefulShutdown = () => {
+  logger.info('Starting graceful shutdown...');
+  
+  // Close the server first
   server.close(() => {
     logger.info('Server closed');
+    
+    // Then kill all active processes
+    activeProcesses.forEach(child => {
+      child.kill();
+    });
+    
     process.exit(0);
   });
-  
-  // Force shutdown after timeout
+
+  // Force shutdown if it takes too long
   setTimeout(() => {
-    logger.error('Could not close connections in time, forcefully shutting down');
+    logger.error('Could not close gracefully, forcing shutdown');
     process.exit(1);
-  }, 5000);
-});
+  }, config.GRACEFUL_SHUTDOWN_TIMEOUT);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
 
 const server = app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
+  logger.info('Configuration:', {
+    downloadFolder: config.DOWNLOAD_FOLDER,
+    maxConcurrentDownloads: config.MAX_CONCURRENT_DOWNLOADS,
+    timeout: config.DOWNLOAD_TIMEOUT,
+    rateLimit: config.RATE_LIMIT
+  });
 });
