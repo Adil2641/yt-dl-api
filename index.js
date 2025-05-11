@@ -16,7 +16,7 @@ const cookiePath = path.join(__dirname, "cookies.txt");
 const MAX_CONCURRENT_DOWNLOADS = 3;
 const DOWNLOAD_TIMEOUT = 300000; // 5 minutes
 const TITLE_CACHE_TTL = 10080000; // 1 week
-const CPU_COUNT = os.cpus().length; // Define CPU_COUNT here
+const CPU_COUNT = os.cpus().length;
 
 // Convert exec to promise-based
 const execPromise = util.promisify(exec);
@@ -760,7 +760,7 @@ app.get("/get-info", async (req, res) => {
             const videoInfo = {
                 title: apiResponse.data.title,
                 duration: apiResponse.data.duration || 0,
-                views: 0, // noembed doesn't provide views
+                views: 0,
                 thumbnail: apiResponse.data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
                 timestamp: Date.now()
             };
@@ -793,6 +793,7 @@ app.get("/get-info", async (req, res) => {
     }
 });
 
+// Enhanced download endpoints with better error handling
 app.get("/download-audio", async (req, res) => {
     const { id, quality } = req.query;
     if (!id) {
@@ -819,13 +820,18 @@ app.get("/download-audio", async (req, res) => {
         activeDownloads++;
 
         const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        let command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running audio download command:", command);
         
         const { stdout, stderr } = await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
         console.log("Audio download stdout:", stdout);
         console.error("Audio download stderr:", stderr);
+        
+        // Check if download actually failed despite process completing
+        if (!fs.existsSync(outputPath)) {
+            throw new Error("Download failed - no output file was created");
+        }
         
         activeDownloads--;
         return res.download(outputPath, `${cleanTitle}.mp3`, (err) => {
@@ -854,7 +860,15 @@ app.get("/download-audio", async (req, res) => {
             stdout: error.stdout,
             stderr: error.stderr
         });
-        return res.status(500).json({ error: "Failed to download audio: " + error.message });
+        
+        let errorMessage = "Failed to download audio";
+        if (error.stderr && error.stderr.includes("Video unavailable")) {
+            errorMessage = "This video is unavailable (private or removed)";
+        } else if (error.message.includes("timeout")) {
+            errorMessage = "Download timed out";
+        }
+        
+        return res.status(500).json({ error: errorMessage });
     }
 });
 
@@ -890,13 +904,18 @@ app.get("/download-video", async (req, res) => {
             format = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
         
-        const command = `${ytDlpPath} --cookies ${cookiePath} -f "${format}" --no-playlist --merge-output-format mp4 --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f "${format}" --no-playlist --merge-output-format mp4 --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
 
         console.log("Running video download command:", command);
         
         const { stdout, stderr } = await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
         console.log("Video download stdout:", stdout);
         console.error("Video download stderr:", stderr);
+        
+        // Check if download actually failed despite process completing
+        if (!fs.existsSync(outputPath)) {
+            throw new Error("Download failed - no output file was created");
+        }
         
         activeDownloads--;
         return res.download(outputPath, `${cleanTitle}.mp4`, (err) => {
@@ -925,7 +944,15 @@ app.get("/download-video", async (req, res) => {
             stdout: error.stdout,
             stderr: error.stderr
         });
-        return res.status(500).json({ error: "Failed to download video: " + error.message });
+        
+        let errorMessage = "Failed to download video";
+        if (error.stderr && error.stderr.includes("Video unavailable")) {
+            errorMessage = "This video is unavailable (private or removed)";
+        } else if (error.message.includes("timeout")) {
+            errorMessage = "Download timed out";
+        }
+        
+        return res.status(500).json({ error: errorMessage });
     }
 });
 
@@ -969,15 +996,14 @@ app.get("/download-progress", (req, res) => {
     // Build yt-dlp command based on format and quality
     let command;
     if (format === 'mp3') {
-        const audioQuality = quality === 'best' ? '0' : '5'; // 0 = best, 5 = medium quality
-        command = `${ytDlpPath} --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        const audioQuality = quality === 'best' ? '0' : '5';
+        command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     } else {
-        // For MP4, we download based on selected quality
         let formatString = "best";
         if (quality !== "best") {
             formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
         }
-        command = `${ytDlpPath} --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
     }
 
     console.log("Running download command:", command);
@@ -987,8 +1013,21 @@ app.get("/download-progress", (req, res) => {
     // Progress tracking
     let progress = 0;
     child.stderr.on('data', (data) => {
-        console.log("yt-dlp stderr:", data.toString());
-        const progressMatch = data.toString().match(/\[download\]\s+(\d+\.\d+)%/);
+        const dataStr = data.toString();
+        console.log("yt-dlp stderr:", dataStr);
+        
+        // Check for video unavailable error
+        if (dataStr.includes("Video unavailable")) {
+            const errorMsg = "This video is unavailable (private or removed)";
+            console.error(errorMsg);
+            res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
+            res.end();
+            child.kill();
+            activeDownloads--;
+            return;
+        }
+
+        const progressMatch = dataStr.match(/\[download\]\s+(\d+\.\d+)%/);
         if (progressMatch) {
             progress = parseFloat(progressMatch[1]);
             res.write(`data: ${JSON.stringify({ progress })}\n\n`);
@@ -1009,10 +1048,17 @@ app.get("/download-progress", (req, res) => {
     child.on('close', (code, signal) => {
         activeDownloads--;
         console.log(`Child process closed with code ${code} and signal ${signal}`);
+        
         if (code === 0) {
-            res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+            if (fs.existsSync(outputPath)) {
+                res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
+            } else {
+                const errorMsg = "Download completed but no file was created";
+                console.error(errorMsg);
+                res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
+            }
         } else {
-            const errorMsg = `Download failed with code ${code}. Please try again.`;
+            const errorMsg = `Download failed with code ${code}`;
             console.error(errorMsg);
             res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
             try {
