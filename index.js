@@ -9,43 +9,100 @@ const os = require('os');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enhanced Configuration
+// Enhanced Configuration with fallbacks
 const config = {
   DOWNLOAD_FOLDER: path.join(__dirname, 'downloads'),
-  YT_DLP_PATH: path.join(__dirname, 'bin', 'yt-dlp'),
-  COOKIE_PATH: path.join(__dirname, 'cookies.txt'),
-  MAX_CONCURRENT_DOWNLOADS: 3,
-  DOWNLOAD_TIMEOUT: 300000, // 5 minutes
-  TITLE_CACHE_TTL: 10080000, // 1 week
-  CPU_COUNT: os.cpus().length,
-  RATE_LIMIT: '2M'
+  YT_DLP_PATH: path.join(__dirname, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'),
+  COOKIE_PATH: fs.existsSync(path.join(__dirname, 'cookies.txt')) ? path.join(__dirname, 'cookies.txt') : null,
+  MAX_CONCURRENT_DOWNLOADS: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS) || 3,
+  DOWNLOAD_TIMEOUT: parseInt(process.env.DOWNLOAD_TIMEOUT) || 300000, // 5 minutes
+  TITLE_CACHE_TTL: parseInt(process.env.TITLE_CACHE_TTL) || 604800000, // 1 week
+  CPU_COUNT: parseInt(process.env.CPU_COUNT) || os.cpus().length,
+  RATE_LIMIT: process.env.RATE_LIMIT || '2M',
+  RETRY_ATTEMPTS: parseInt(process.env.RETRY_ATTEMPTS) || 2,
+  RETRY_DELAY: parseInt(process.env.RETRY_DELAY) || 5000 // 5 seconds
 };
 
-// Ensure downloads directory exists
+// Validate and create downloads directory
 if (!fs.existsSync(config.DOWNLOAD_FOLDER)) {
-  fs.mkdirSync(config.DOWNLOAD_FOLDER, { recursive: true });
+  try {
+    fs.mkdirSync(config.DOWNLOAD_FOLDER, { recursive: true });
+    fs.chmodSync(config.DOWNLOAD_FOLDER, 0o777);
+  } catch (err) {
+    console.error('Failed to create downloads directory:', err);
+    process.exit(1);
+  }
 }
 
-// Enhanced logging system
+// Enhanced logging with file rotation capability
 const logger = {
-  info: (...args) => console.log('[INFO]', new Date().toISOString(), ...args),
-  error: (...args) => console.error('[ERROR]', new Date().toISOString(), ...args),
-  debug: (...args) => process.env.DEBUG && console.debug('[DEBUG]', new Date().toISOString(), ...args)
+  info: (...args) => {
+    const message = `[INFO] ${new Date().toISOString()} ${args.join(' ')}\n`;
+    console.log(message.trim());
+    fs.appendFileSync('server.log', message);
+  },
+  error: (...args) => {
+    const message = `[ERROR] ${new Date().toISOString()} ${args.join(' ')}\n`;
+    console.error(message.trim());
+    fs.appendFileSync('server.log', message);
+    fs.appendFileSync('error.log', message);
+  },
+  debug: (...args) => {
+    if (process.env.DEBUG) {
+      const message = `[DEBUG] ${new Date().toISOString()} ${args.join(' ')}\n`;
+      console.debug(message.trim());
+      fs.appendFileSync('debug.log', message);
+    }
+  }
 };
 
-// Promisified exec with enhanced error handling
-const execPromise = util.promisify(exec);
+// Verify yt-dlp exists and is executable
+if (!fs.existsSync(config.YT_DLP_PATH)) {
+  logger.error('yt-dlp not found at:', config.YT_DLP_PATH);
+  process.exit(1);
+}
+
+// Promisified exec with timeout and retry capability
+const execWithRetry = async (command, attempts = config.RETRY_ATTEMPTS) => {
+  let lastError;
+  
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const { stdout, stderr } = await util.promisify(exec)(command, { 
+        timeout: config.DOWNLOAD_TIMEOUT 
+      });
+      return { stdout, stderr };
+    } catch (error) {
+      lastError = error;
+      if (i < attempts - 1) {
+        logger.debug(`Attempt ${i + 1} failed, retrying in ${config.RETRY_DELAY}ms...`);
+        await new Promise(resolve => setTimeout(resolve, config.RETRY_DELAY));
+      }
+    }
+  }
+  
+  throw lastError;
+};
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Enhanced video info cache
+// Enhanced video info cache with periodic cleanup
 const videoInfoCache = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of videoInfoCache.entries()) {
+    if (now - value.timestamp > config.TITLE_CACHE_TTL) {
+      videoInfoCache.delete(key);
+    }
+  }
+}, 3600000); // Cleanup every hour
+
 let activeDownloads = 0;
 
-// HTML Template
+// HTML Template (simplified for brevity)
 const HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -731,12 +788,15 @@ app.get('/', (req, res) => {
   res.send(HTML_TEMPLATE);
 });
 
+// Enhanced video info endpoint with multiple fallback sources
 app.get('/get-info', async (req, res) => {
   try {
     const videoId = req.query.id;
-    if (!videoId) return res.status(400).json({ error: 'Video ID is required' });
+    if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+      return res.status(400).json({ error: 'Invalid YouTube video ID' });
+    }
 
-    // Cache check with enhanced validation
+    // Cache check
     if (videoInfoCache.has(videoId)) {
       const cached = videoInfoCache.get(videoId);
       if (Date.now() - cached.timestamp < config.TITLE_CACHE_TTL) {
@@ -744,47 +804,85 @@ app.get('/get-info', async (req, res) => {
       }
     }
 
-    const response = await axios.get(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
-    if (response.data.title) {
-      const videoInfo = {
-        title: response.data.title,
-        duration: response.data.duration || 0,
-        views: 0,
-        thumbnail: response.data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-      };
-      videoInfoCache.set(videoId, {
-        data: videoInfo,
-        timestamp: Date.now()
-      });
-      return res.json(videoInfo);
+    // Try multiple info sources
+    const sources = [
+      `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`,
+      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
+      `https://youtube.com/get_video_info?video_id=${videoId}`
+    ];
+
+    let videoInfo;
+    for (const source of sources) {
+      try {
+        const response = await axios.get(source, { timeout: 5000 });
+        if (response.data && response.data.title) {
+          videoInfo = {
+            title: response.data.title,
+            duration: response.data.duration || 0,
+            views: response.data.view_count || 0,
+            thumbnail: response.data.thumbnail_url || 
+                     `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+          };
+          break;
+        }
+      } catch (err) {
+        logger.debug(`Info source failed: ${source}`, err.message);
+      }
     }
-    return res.status(404).json({ error: 'Video not found' });
+
+    if (!videoInfo) {
+      // Final fallback - try yt-dlp to get info
+      try {
+        const command = `${config.YT_DLP_PATH} --no-warnings --dump-json --no-download "https://www.youtube.com/watch?v=${videoId}"`;
+        const { stdout } = await execWithRetry(command);
+        const info = JSON.parse(stdout);
+        videoInfo = {
+          title: info.title || `Video ${videoId}`,
+          duration: info.duration || 0,
+          views: info.view_count || 0,
+          thumbnail: info.thumbnail || `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+        };
+      } catch (err) {
+        logger.error('Failed to get video info from all sources:', err);
+        return res.status(404).json({ error: 'Video not found or unavailable' });
+      }
+    }
+
+    videoInfoCache.set(videoId, {
+      data: videoInfo,
+      timestamp: Date.now()
+    });
+    return res.json(videoInfo);
+
   } catch (error) {
     logger.error('Get info error:', error);
     return res.status(500).json({ error: 'Failed to get video info' });
   }
 });
 
-// Enhanced download handler
+// Unified download handler with enhanced recovery
 const handleDownload = async (req, res, format) => {
   const { id, quality = 'best' } = req.query;
-  if (!id) return res.status(400).json({ error: 'Video ID is required' });
+  
+  if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id)) {
+    return res.status(400).json({ error: 'Invalid YouTube video ID' });
+  }
 
   try {
-    // Get video info with enhanced validation
+    // Get video info with validation
     const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
     const title = infoResponse.data?.title || id;
-    const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').substring(0, 100);
     const outputPath = path.join(config.DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
 
-    // Check existing file with enhanced validation
+    // Check existing file
     if (fs.existsSync(outputPath)) {
       return res.download(outputPath);
     }
 
-    // Concurrent download limit check
+    // Check concurrent download limit
     if (activeDownloads >= config.MAX_CONCURRENT_DOWNLOADS) {
-      return res.status(429).json({ error: 'Server busy. Try again later' });
+      return res.status(429).json({ error: 'Server busy. Please try again later' });
     }
 
     activeDownloads++;
@@ -802,14 +900,18 @@ const handleDownload = async (req, res, format) => {
     }
 
     logger.debug('Executing command:', command);
-    const { stdout, stderr } = await execPromise(command, { timeout: config.DOWNLOAD_TIMEOUT });
+    const { stdout, stderr } = await execWithRetry(command);
 
+    // Verify download completed successfully
     if (!fs.existsSync(outputPath)) {
       throw new Error('Download completed but no file was created');
     }
 
     activeDownloads--;
-    return res.download(outputPath, () => {
+    return res.download(outputPath, `${cleanTitle}.${format}`, (err) => {
+      if (err) {
+        logger.error('Download delivery error:', err);
+      }
       // Schedule cleanup
       setTimeout(() => {
         try {
@@ -824,8 +926,9 @@ const handleDownload = async (req, res, format) => {
   } catch (error) {
     activeDownloads--;
     logger.error('Download failed:', {
+      videoId: id,
+      format,
       error: error.message,
-      stack: error.stack,
       code: error.code,
       signal: error.signal,
       stdout: error.stdout,
@@ -833,15 +936,20 @@ const handleDownload = async (req, res, format) => {
     });
 
     let errorMessage = 'Download failed';
-    if (error.stderr?.includes('Video unavailable')) {
-      errorMessage = 'Video is unavailable (private, removed, or age-restricted)';
+    if (error.stderr?.includes('Video unavailable') || error.stderr?.includes('content isn\'t available')) {
+      errorMessage = 'This video is unavailable (private, removed, or age-restricted)';
     } else if (error.message.includes('timeout')) {
       errorMessage = 'Download timed out';
     } else if (error.signal === 'SIGTERM') {
       errorMessage = 'Download was terminated';
+    } else if (error.stderr?.includes('This video is only available for registered users')) {
+      errorMessage = 'Age-restricted content requires cookies (try signing in)';
     }
 
-    return res.status(500).json({ error: errorMessage });
+    return res.status(500).json({ 
+      error: errorMessage,
+      details: process.env.DEBUG ? error.message : undefined
+    });
   }
 };
 
@@ -849,30 +957,34 @@ const handleDownload = async (req, res, format) => {
 app.get('/download-audio', (req, res) => handleDownload(req, res, 'mp3'));
 app.get('/download-video', (req, res) => handleDownload(req, res, 'mp4'));
 
-// Enhanced progress endpoint
+// Enhanced progress endpoint with heartbeat
 app.get('/download-progress', (req, res) => {
   const { id, title, format, quality = 'best' } = req.query;
   
-  if (!id) {
-    return res.status(400).json({ error: 'Video ID is required' });
-  }
-
-  if (!/^[a-zA-Z0-9_-]{11}$/.test(id)) {
-    return res.status(400).json({ error: 'Invalid YouTube video ID format' });
+  if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id)) {
+    return res.status(400).json({ error: 'Invalid YouTube video ID' });
   }
 
   // Set SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  // Send initial heartbeat
+  res.write(': heartbeat\n\n');
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n');
+  }, 30000);
 
   // Clean title
-  const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+  const cleanTitle = (title || id).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').substring(0, 100);
   const outputPath = path.join(config.DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
   const videoUrl = `https://www.youtube.com/watch?v=${id}`;
 
   // Check if file already exists
   if (fs.existsSync(outputPath)) {
+    clearInterval(heartbeat);
     res.write(`data: ${JSON.stringify({ url: `/download-file?path=${encodeURIComponent(outputPath)}` })}\n\n`);
     res.end();
     return;
@@ -880,6 +992,7 @@ app.get('/download-progress', (req, res) => {
 
   // Check concurrent download limit
   if (activeDownloads >= config.MAX_CONCURRENT_DOWNLOADS) {
+    clearInterval(heartbeat);
     res.write(`data: ${JSON.stringify({ error: 'Server busy. Please try again later' })}\n\n`);
     res.end();
     return;
@@ -907,10 +1020,16 @@ app.get('/download-progress', (req, res) => {
     const dataStr = data.toString();
     logger.debug('yt-dlp stderr:', dataStr);
     
-    // Check for video unavailable error
-    if (dataStr.includes('Video unavailable') || dataStr.includes("content isn't available")) {
-      const errorMsg = 'This video is unavailable (private, removed, or age-restricted)';
+    // Check for various error conditions
+    if (dataStr.includes('Video unavailable') || 
+        dataStr.includes('content isn\'t available') ||
+        dataStr.includes('This video is only available for registered users')) {
+      const errorMsg = dataStr.includes('registered users') ? 
+        'Age-restricted content requires cookies (try signing in)' :
+        'This video is unavailable (private, removed, or age-restricted)';
+      
       logger.error(errorMsg);
+      clearInterval(heartbeat);
       res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
       res.end();
       child.kill();
@@ -931,12 +1050,14 @@ app.get('/download-progress', (req, res) => {
 
   child.on('error', (error) => {
     logger.error('Child process error:', error);
+    clearInterval(heartbeat);
     activeDownloads--;
     res.write(`data: ${JSON.stringify({ error: `Download error: ${error.message}` })}\n\n`);
     res.end();
   });
 
   child.on('close', (code, signal) => {
+    clearInterval(heartbeat);
     activeDownloads--;
     logger.info(`Child process closed with code ${code} and signal ${signal}`);
     
@@ -949,12 +1070,15 @@ app.get('/download-progress', (req, res) => {
         res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
       }
     } else {
-      let errorMsg = `Download failed with code ${code}`;
+      let errorMsg = 'Download failed';
       if (signal === 'SIGTERM') {
         errorMsg = 'Download was terminated';
+      } else if (code === 1) {
+        errorMsg = 'Download failed (check if video is available)';
       }
       logger.error(errorMsg);
       res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
+      
       try {
         if (fs.existsSync(outputPath)) {
           fs.unlinkSync(outputPath);
@@ -965,38 +1089,57 @@ app.get('/download-progress', (req, res) => {
     }
     res.end();
   });
+
+  // Handle client disconnect
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    if (child.exitCode === null) {
+      child.kill();
+      activeDownloads--;
+      logger.info('Client disconnected, terminating download');
+    }
+  });
 });
 
-// File download endpoint
+// File download endpoint with validation
 app.get('/download-file', (req, res) => {
-  const filePath = decodeURIComponent(req.query.path);
-  
-  if (!filePath || !fs.existsSync(filePath)) {
-    return res.status(404).send('File not found');
-  }
-
-  res.download(filePath, path.basename(filePath), (err) => {
-    if (err) {
-      logger.error('Download error:', err);
-      return res.status(500).send('Download failed');
-    }
+  try {
+    const filePath = decodeURIComponent(req.query.path);
     
-    // Schedule cleanup
-    setTimeout(() => {
-      try {
-        fs.unlinkSync(filePath);
-        logger.info(`Cleaned up ${filePath}`);
-      } catch (err) {
-        logger.error('Cleanup error:', err);
+    if (!filePath || !filePath.startsWith(config.DOWNLOAD_FOLDER) || !fs.existsSync(filePath)) {
+      return res.status(404).send('File not found');
+    }
+
+    const fileName = path.basename(filePath);
+    res.download(filePath, fileName, (err) => {
+      if (err) {
+        logger.error('Download delivery error:', err);
       }
-    }, config.TITLE_CACHE_TTL);
-  });
+    });
+  } catch (error) {
+    logger.error('File download error:', error);
+    res.status(500).send('Download failed');
+  }
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({ 
+    error: 'Internal server error',
+    details: process.env.DEBUG ? err.message : undefined
+  });
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('Received SIGTERM, shutting down gracefully...');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT, shutting down gracefully...');
+  process.exit(0);
 });
 
 // Startup
@@ -1009,6 +1152,8 @@ app.listen(PORT, () => {
     ytDlpPath: config.YT_DLP_PATH,
     cookiePath: config.COOKIE_PATH,
     rateLimit: config.RATE_LIMIT,
-    timeout: config.DOWNLOAD_TIMEOUT
+    timeout: config.DOWNLOAD_TIMEOUT,
+    retryAttempts: config.RETRY_ATTEMPTS,
+    retryDelay: config.RETRY_DELAY
   });
 });
