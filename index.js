@@ -35,7 +35,7 @@ app.use(express.static('public'));
 const titleCache = new Map();
 let activeDownloads = 0;
 
-// HTML Template remains exactly the same as provided
+// HTML Template remains the same
 const HTML_TEMPLATE = `
 <!DOCTYPE html>
 <html lang="en">
@@ -794,7 +794,7 @@ app.get("/get-info", async (req, res) => {
 });
 
 // Enhanced download endpoints with better error handling
-app.get("/download-audio", async (req, res) => {
+const downloadMedia = async (req, res, format) => {
     const { id, quality } = req.query;
     if (!id) {
         return res.status(400).json({ error: "Video ID is required." });
@@ -805,11 +805,11 @@ app.get("/download-audio", async (req, res) => {
         const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
         const title = infoResponse.data.title || id;
         const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp3`);
+        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.${format}`);
         
         // Check if file already exists
         if (fs.existsSync(outputPath)) {
-            return res.download(outputPath, `${cleanTitle}.mp3`);
+            return res.download(outputPath, `${cleanTitle}.${format}`);
         }
 
         // Check concurrent download limit
@@ -820,13 +820,24 @@ app.get("/download-audio", async (req, res) => {
         activeDownloads++;
 
         const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${quality === 'best' ? '0' : '5'} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        let command;
+        
+        if (format === 'mp3') {
+            const audioQuality = quality === 'best' ? '0' : '5';
+            command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f bestaudio --extract-audio --audio-format mp3 --audio-quality ${audioQuality} --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        } else {
+            let formatString = "best";
+            if (quality !== "best") {
+                formatString = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
+            }
+            command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f "${formatString}" --merge-output-format mp4 --no-playlist --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
+        }
 
-        console.log("Running audio download command:", command);
+        console.log("Running download command:", command);
         
         const { stdout, stderr } = await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
-        console.log("Audio download stdout:", stdout);
-        console.error("Audio download stderr:", stderr);
+        console.log("Download stdout:", stdout);
+        console.error("Download stderr:", stderr);
         
         // Check if download actually failed despite process completing
         if (!fs.existsSync(outputPath)) {
@@ -834,7 +845,7 @@ app.get("/download-audio", async (req, res) => {
         }
         
         activeDownloads--;
-        return res.download(outputPath, `${cleanTitle}.mp3`, (err) => {
+        return res.download(outputPath, `${cleanTitle}.${format}`, (err) => {
             if (err) {
                 console.error("Download error:", err);
                 return res.status(500).json({ error: "Download failed" });
@@ -851,7 +862,7 @@ app.get("/download-audio", async (req, res) => {
         });
     } catch (error) {
         activeDownloads--;
-        console.error("Audio download error:", error);
+        console.error("Download error:", error);
         console.error("Error details:", {
             message: error.message,
             stack: error.stack,
@@ -861,100 +872,21 @@ app.get("/download-audio", async (req, res) => {
             stderr: error.stderr
         });
         
-        let errorMessage = "Failed to download audio";
+        let errorMessage = "Failed to download";
         if (error.stderr && error.stderr.includes("Video unavailable")) {
-            errorMessage = "This video is unavailable (private or removed)";
+            errorMessage = "This video is unavailable (private, removed, or age-restricted)";
         } else if (error.message.includes("timeout")) {
             errorMessage = "Download timed out";
+        } else if (error.signal === "SIGTERM") {
+            errorMessage = "Download was terminated";
         }
         
         return res.status(500).json({ error: errorMessage });
     }
-});
+};
 
-app.get("/download-video", async (req, res) => {
-    const { id, quality } = req.query;
-    if (!id) {
-        return res.status(400).json({ error: "Video ID is required." });
-    }
-
-    try {
-        // Get video info first
-        const infoResponse = await axios.get(`http://localhost:${PORT}/get-info?id=${id}`);
-        const title = infoResponse.data.title || id;
-        const cleanTitle = title.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-        const outputPath = path.join(DOWNLOAD_FOLDER, `${cleanTitle}.mp4`);
-        
-        // Check if file already exists
-        if (fs.existsSync(outputPath)) {
-            return res.download(outputPath, `${cleanTitle}.mp4`);
-        }
-
-        // Check concurrent download limit
-        if (activeDownloads >= MAX_CONCURRENT_DOWNLOADS) {
-            return res.status(429).json({ error: "Server busy. Please try again later." });
-        }
-
-        activeDownloads++;
-
-        const videoUrl = `https://www.youtube.com/watch?v=${id}`;
-        let format = "best";
-        
-        if (quality !== "best") {
-            format = `bestvideo[height<=?${quality}]+bestaudio/best[height<=?${quality}]`;
-        }
-        
-        const command = `${ytDlpPath} --no-warnings --cookies ${cookiePath} -f "${format}" --no-playlist --merge-output-format mp4 --concurrent-fragments ${CPU_COUNT} --limit-rate 2M -o "${outputPath}" "${videoUrl}"`;
-
-        console.log("Running video download command:", command);
-        
-        const { stdout, stderr } = await execPromise(command, { timeout: DOWNLOAD_TIMEOUT });
-        console.log("Video download stdout:", stdout);
-        console.error("Video download stderr:", stderr);
-        
-        // Check if download actually failed despite process completing
-        if (!fs.existsSync(outputPath)) {
-            throw new Error("Download failed - no output file was created");
-        }
-        
-        activeDownloads--;
-        return res.download(outputPath, `${cleanTitle}.mp4`, (err) => {
-            if (err) {
-                console.error("Download error:", err);
-                return res.status(500).json({ error: "Download failed" });
-            }
-            
-            // Schedule cleanup after 1 week
-            setTimeout(() => {
-                try {
-                    fs.unlinkSync(outputPath);
-                } catch (err) {
-                    console.error("Cleanup error:", err);
-                }
-            }, 10080000);
-        });
-    } catch (error) {
-        activeDownloads--;
-        console.error("Video download error:", error);
-        console.error("Error details:", {
-            message: error.message,
-            stack: error.stack,
-            code: error.code,
-            signal: error.signal,
-            stdout: error.stdout,
-            stderr: error.stderr
-        });
-        
-        let errorMessage = "Failed to download video";
-        if (error.stderr && error.stderr.includes("Video unavailable")) {
-            errorMessage = "This video is unavailable (private or removed)";
-        } else if (error.message.includes("timeout")) {
-            errorMessage = "Download timed out";
-        }
-        
-        return res.status(500).json({ error: errorMessage });
-    }
-});
+app.get("/download-audio", (req, res) => downloadMedia(req, res, 'mp3'));
+app.get("/download-video", (req, res) => downloadMedia(req, res, 'mp4'));
 
 app.get("/download-progress", (req, res) => {
     const { id, title, format, quality } = req.query;
@@ -1017,8 +949,8 @@ app.get("/download-progress", (req, res) => {
         console.log("yt-dlp stderr:", dataStr);
         
         // Check for video unavailable error
-        if (dataStr.includes("Video unavailable")) {
-            const errorMsg = "This video is unavailable (private or removed)";
+        if (dataStr.includes("Video unavailable") || dataStr.includes("content isn't available")) {
+            const errorMsg = "This video is unavailable (private, removed, or age-restricted)";
             console.error(errorMsg);
             res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
             res.end();
@@ -1058,7 +990,10 @@ app.get("/download-progress", (req, res) => {
                 res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
             }
         } else {
-            const errorMsg = `Download failed with code ${code}`;
+            let errorMsg = `Download failed with code ${code}`;
+            if (signal === "SIGTERM") {
+                errorMsg = "Download was terminated";
+            }
             console.error(errorMsg);
             res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
             try {
@@ -1109,4 +1044,5 @@ app.listen(PORT, () => {
     console.log(`Max concurrent downloads: ${MAX_CONCURRENT_DOWNLOADS}`);
     console.log(`Download folder: ${DOWNLOAD_FOLDER}`);
     console.log(`YT-DLP path: ${ytDlpPath}`);
+    console.log(`Cookies path: ${cookiePath}`);
 });
